@@ -1,0 +1,119 @@
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn__icon {
+  display: grid;
+  place-items: center;
+}
+
+.icon-btn__icon svg {
+  display: block;
+}
+
+/* Sizes */
+.icon-btn--sm {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-btn--md {
+  width: 32px;
+  height: 32px;
+}
+
+.icon-btn--lg {
+  width: 40px;
+  height: 40px;
+}
+
+/* Variants */
+.icon-btn--default {
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.icon-btn--default:hover:not(:disabled),
+.icon-btn--default.active {
+  color: #fff;
+  border-color: #667eea;
+}
+
+.icon-btn--danger {
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+.icon-btn--ghost {
+  color: #666;
+  border-radius: 4px;
+}
+
+.icon-btn--ghost:hover:not(:disabled) {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.icon-btn--inline {
+  color: #888;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 4px;
+}
+
+.icon-btn--inline:hover:not(:disabled) {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.25);
+}
+
+.icon-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  border: none;
+}
+
+.icon-btn--primary:hover:not(:disabled) {
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Input addon (for copy buttons inside inputs) */
+.input-with-btn {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.input-with-btn input {
+  flex: 1;
+  width: 100%;
+  padding-right: 44px !important;
+}
+
+.input-with-btn .icon-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
