@@ -18,13 +18,13 @@ Then if the crdt maps to a comment the owner of the comment is able to edit it.
 
 Use the networking adapter used by the example.
 
-Use the web3 user adapter is possible
+Uses ECDSA user adapter for authentication
 
 ## Architecture Decisions
 
 - **Channel ownership**: First user to join = admin, can promote others
 - **Channel discovery**: Public (anyone can join by entering channel ID)
-- **Authentication**: Web3 adapter first, fallback to ECDSA (username/password)
+- **Authentication**: ECDSA adapter (username/password)
 - **File schema**: `{ id, name, description, linkType, link }` (uploader/timestamp from message metadata)
 - **Link types**: `www` | `magnet` | `tooldb`
 - **Moderation**: Admin-maintained blocklist, clients filter messages locally
@@ -42,7 +42,7 @@ Use the web3 user adapter is possible
 - Test: Two browser tabs can see each other as peers
 
 ### Phase 2: Authentication
-- Integrate `@tool-db/web3-user` (fallback to `@tool-db/ecdsa-user` if issues)
+- Integrate `@tool-db/ecdsa-user` for authentication
 - Sign up / Sign in flow
 - Display user address after login
 - Key export button (download private key as JSON for backup)

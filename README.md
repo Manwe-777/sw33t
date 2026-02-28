@@ -9,7 +9,7 @@ A decentralized file sharing app built with React and [ToolDB](https://github.co
 - **Multiple Link Types**: Share files via URLs, magnet links, or upload directly using WebTorrent.
 - **WebTorrent Integration**: Upload files directly from your browser and share them P2P with other users.
 - **Categories**: Organize files into categories within each channel.
-- **Authentication**: Sign up with username/password (ECDSA) or connect with Web3 wallet.
+- **Authentication**: Sign up with username/password (ECDSA keys).
 - **Admin System**: Channel creators get admin permissions with granular permission controls.
 - **Persistent Storage**: Data persists locally via IndexedDB.
 
