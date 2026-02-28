@@ -132,6 +132,16 @@ function ChannelPage() {
         
         const cats = await getCategories();
         setCategories(cats);
+        
+        // Auto-navigate to first category if none selected and categories exist
+        if (!categoryId) {
+          const catList = Object.values(cats).filter(c => !c.deleted);
+          if (catList.length > 0) {
+            // Sort by name and navigate to first
+            catList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+            navigate(`/c/${channelId}/${catList[0].id}`, { replace: true });
+          }
+        }
       } catch (err) {
         console.error("Failed to initialize channel:", err);
       }
