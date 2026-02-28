@@ -19,6 +19,12 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
+  resolve: {
+    alias: {
+      // bittorrent-dht is Node.js only, provide empty shim for browser
+      'bittorrent-dht': './src/shims/empty.js',
+    },
+  },
   optimizeDeps: {
     include: [
       'tool-db',
@@ -36,14 +42,6 @@ export default defineConfig({
   build: {
     commonjsOptions: {
       transformMixedEsModules: true,
-    },
-    rollupOptions: {
-      external: ['bittorrent-dht'],
-      output: {
-        globals: {
-          'bittorrent-dht': '{}',
-        },
-      },
     },
   },
 })
