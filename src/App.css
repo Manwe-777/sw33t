@@ -1204,33 +1204,20 @@ main {
 }
 
 /* File Card with Image */
-.file-card--with-image {
-  flex-direction: column;
-  gap: 12px;
-}
-
 .file-card__image {
-  width: 100%;
-  max-height: 200px;
+  width: 80px;
+  height: 60px;
   border-radius: 8px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .file-card__image img {
   width: 100%;
   height: 100%;
-  max-height: 200px;
   object-fit: cover;
   display: block;
-}
-
-.file-card--with-image .file-card__content {
-  width: 100%;
-}
-
-.file-card--with-image .file-card__actions {
-  align-self: flex-end;
 }
 
 /* File Card Skeleton */

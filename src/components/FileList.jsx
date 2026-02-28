@@ -371,7 +371,7 @@ function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   };
 
   return (
-    <div className={`file-card file-card--torrent ${seeding ? "file-card--seeding" : ""} ${file.image ? "file-card--with-image" : ""}`}>
+    <div className={`file-card file-card--torrent ${seeding ? "file-card--seeding" : ""}`}>
       {file.image ? (
         <div className="file-card__image">
           <img src={file.image} alt={file.name} />
@@ -558,7 +558,7 @@ function FileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   };
 
   return (
-    <div className={`file-card ${file.image ? "file-card--with-image" : ""}`}>
+    <div className="file-card">
       {file.image ? (
         <div className="file-card__image">
           <img src={file.image} alt={file.name} />
