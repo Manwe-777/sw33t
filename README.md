@@ -2,6 +2,8 @@
 
 A decentralized file sharing app built with React and [ToolDB](https://github.com/Manwe-777/tool-db). Users join channels, browse categories, share files via links or P2P torrents, and interact through comments and upvotes - all without any central server.
 
+**Live Demo**: https://manwe-777.github.io/sw33t/
+
 ## Features
 
 - **Decentralized Channels**: Each channel is a separate P2P network. Join by entering a channel ID - no registration required.
