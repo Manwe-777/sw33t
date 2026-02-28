@@ -1,7 +1,10 @@
 import { useState, useRef } from "react";
 import { addFile } from "../lib/fileService";
 import { seedFile, formatBytes } from "../lib/torrentService";
-import { Link2, Magnet, Package, Upload, X, AlertTriangle, HardDrive } from "lucide-react";
+import { Link2, Magnet, Package, Upload, X, AlertTriangle, HardDrive, Image, Trash2 } from "lucide-react";
+
+const MAX_IMAGE_SIZE = 100 * 1024; // 100KB max for base64 images
+const MAX_IMAGE_DIMENSION = 400; // Max width/height for thumbnails
 
 const LINK_TYPES = [
   { id: "www", label: "Web Link", icon: Link2, placeholder: "https://example.com/file.zip" },
@@ -22,6 +25,12 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
   const fileInputRef = useRef(null);
+  
+  // Image state
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState(null); // base64 or URL
+  const [imageError, setImageError] = useState("");
+  const imageInputRef = useRef(null);
 
   const handleSubmitLink = async (e) => {
     e.preventDefault();
@@ -39,12 +48,19 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
 
     setIsSubmitting(true);
     try {
-      await addFile(categoryId, {
+      const fileData = {
         name: name.trim(),
         description: description.trim(),
         linkType,
         link: link.trim(),
-      });
+      };
+      
+      // Add image if provided
+      if (imagePreview) {
+        fileData.image = imagePreview;
+      }
+      
+      await addFile(categoryId, fileData);
       
       resetForm();
       onSuccess?.();
@@ -82,14 +98,21 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
 
       setUploadProgress({ status: "saving", percent: 100 });
 
-      await addFile(categoryId, {
+      const fileData = {
         name: fileName,
         description: description.trim(),
         linkType: "torrent",
         link: result.infohash,
         size: result.size,
         magnetURI: result.magnetURI,
-      });
+      };
+      
+      // Add image if provided
+      if (imagePreview) {
+        fileData.image = imagePreview;
+      }
+      
+      await addFile(categoryId, fileData);
       
       resetForm();
       onSuccess?.();
@@ -112,6 +135,89 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
     }
   };
 
+  const resizeImage = (file) => {
+    return new Promise((resolve, reject) => {
+      const img = document.createElement("img");
+      const canvas = document.createElement("canvas");
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.onload = () => {
+          let { width, height } = img;
+          
+          // Calculate new dimensions
+          if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+            if (width > height) {
+              height = (height / width) * MAX_IMAGE_DIMENSION;
+              width = MAX_IMAGE_DIMENSION;
+            } else {
+              width = (width / height) * MAX_IMAGE_DIMENSION;
+              height = MAX_IMAGE_DIMENSION;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Try JPEG first (smaller), fall back to PNG
+          let dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+          if (dataUrl.length > MAX_IMAGE_SIZE) {
+            dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+          }
+          
+          if (dataUrl.length > MAX_IMAGE_SIZE) {
+            reject(new Error("Image too large. Please use a smaller image."));
+          } else {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setImageError("Please select an image file");
+      return;
+    }
+
+    setImageError("");
+    try {
+      const dataUrl = await resizeImage(file);
+      setImagePreview(dataUrl);
+      setImageUrl(""); // Clear URL if uploading
+    } catch (err) {
+      setImageError(err.message);
+    }
+  };
+
+  const handleImageUrlChange = (url) => {
+    setImageUrl(url);
+    if (url.trim()) {
+      setImagePreview(url.trim());
+    } else {
+      setImagePreview(null);
+    }
+  };
+
+  const clearImage = () => {
+    setImageUrl("");
+    setImagePreview(null);
+    setImageError("");
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  };
+
   const resetForm = () => {
     setName("");
     setDescription("");
@@ -120,6 +226,9 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
     setSelectedFile(null);
     setUploadProgress(null);
     setError("");
+    setImageUrl("");
+    setImagePreview(null);
+    setImageError("");
   };
 
   const handleClose = () => {
@@ -220,6 +329,49 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
               />
             </div>
 
+            <div className="form-group">
+              <label>Preview Image (optional)</label>
+              <div className="image-input-group">
+                <input
+                  type="text"
+                  value={imageUrl}
+                  onChange={(e) => handleImageUrlChange(e.target.value)}
+                  placeholder="https://example.com/image.jpg"
+                  className="image-url-input"
+                />
+                <span className="image-input-or">or</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <Image size={14} />
+                  Upload
+                </button>
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  onChange={handleImageSelect}
+                  accept="image/*"
+                  style={{ display: "none" }}
+                />
+              </div>
+              {imageError && <p className="error" style={{ marginTop: "4px" }}>{imageError}</p>}
+              {imagePreview && (
+                <div className="image-preview">
+                  <img src={imagePreview} alt="Preview" />
+                  <button
+                    type="button"
+                    className="image-preview__remove"
+                    onClick={clearImage}
+                    title="Remove image"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+
             {error && <p className="error">{error}</p>}
 
             <div className="form-actions">
@@ -292,6 +444,49 @@ function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) 
                 placeholder="Add some details about this file..."
                 rows={3}
               />
+            </div>
+
+            <div className="form-group">
+              <label>Preview Image (optional)</label>
+              <div className="image-input-group">
+                <input
+                  type="text"
+                  value={imageUrl}
+                  onChange={(e) => handleImageUrlChange(e.target.value)}
+                  placeholder="https://example.com/image.jpg"
+                  className="image-url-input"
+                />
+                <span className="image-input-or">or</span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  <Image size={14} />
+                  Upload
+                </button>
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  onChange={handleImageSelect}
+                  accept="image/*"
+                  style={{ display: "none" }}
+                />
+              </div>
+              {imageError && <p className="error" style={{ marginTop: "4px" }}>{imageError}</p>}
+              {imagePreview && (
+                <div className="image-preview">
+                  <img src={imagePreview} alt="Preview" />
+                  <button
+                    type="button"
+                    className="image-preview__remove"
+                    onClick={clearImage}
+                    title="Remove image"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {uploadProgress && (

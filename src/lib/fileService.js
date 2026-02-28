@@ -53,6 +53,11 @@ export async function addFile(categoryId, file) {
     newFile.magnetURI = file.magnetURI;
   }
   
+  // Add optional image
+  if (file.image) {
+    newFile.image = file.image;
+  }
+  
   const existing = await getFiles(categoryId);
   const updated = { ...existing, [id]: newFile };
   

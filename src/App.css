@@ -1203,6 +1203,36 @@ main {
   flex-shrink: 0;
 }
 
+/* File Card with Image */
+.file-card--with-image {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.file-card__image {
+  width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.file-card__image img {
+  width: 100%;
+  height: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+}
+
+.file-card--with-image .file-card__content {
+  width: 100%;
+}
+
+.file-card--with-image .file-card__actions {
+  align-self: flex-end;
+}
+
 /* File Card Skeleton */
 .file-card--skeleton {
   pointer-events: none;
@@ -2049,4 +2079,54 @@ main {
   .main-content {
     flex-direction: column;
   }
+}
+
+/* Image Input Styles */
+.image-input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.image-url-input {
+  flex: 1;
+}
+
+.image-input-or {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.image-preview {
+  margin-top: 10px;
+  position: relative;
+  display: inline-block;
+  max-width: 200px;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 150px;
+  border-radius: 8px;
+  display: block;
+}
+
+.image-preview__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.15s;
+}
+
+.image-preview__remove:hover {
+  background: #e53935;
 }

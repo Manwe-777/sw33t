@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   getFiles, 
   subscribeToFiles, 
@@ -7,6 +7,7 @@ import {
   subscribeToBlocklist,
   blockFile,
   isFileBlocked,
+  updateFile,
 } from "../lib/fileService";
 import { 
   downloadTorrent, 
@@ -20,9 +21,12 @@ import { useAuth } from "../context/AuthContext";
 import { UserAvatar } from "./Avatar";
 import { 
   Link2, Magnet, Package, ExternalLink, Clock, Copy, Check, Trash2,
-  Upload, Download, Users, HardDrive, X,
+  Upload, Download, Users, HardDrive, X, Pencil, Image,
 } from "lucide-react";
 import IconButton from "./IconButton";
+
+const MAX_IMAGE_SIZE = 100 * 1024; // 100KB max for base64 images
+const MAX_IMAGE_DIMENSION = 400;
 
 function getLinkIcon(linkType) {
   switch (linkType) {
@@ -39,7 +43,232 @@ function getLinkIcon(linkType) {
   }
 }
 
-function TorrentFileCard({ file, canDelete, onDelete }) {
+// Image resize helper
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement("img");
+    const canvas = document.createElement("canvas");
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+          if (width > height) {
+            height = (height / width) * MAX_IMAGE_DIMENSION;
+            width = MAX_IMAGE_DIMENSION;
+          } else {
+            width = (width / height) * MAX_IMAGE_DIMENSION;
+            height = MAX_IMAGE_DIMENSION;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+        if (dataUrl.length > MAX_IMAGE_SIZE) {
+          dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+        }
+        
+        if (dataUrl.length > MAX_IMAGE_SIZE) {
+          reject(new Error("Image too large. Please use a smaller image."));
+        } else {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function EditFileModal({ isOpen, onClose, file, categoryId, onSuccess }) {
+  const [name, setName] = useState(file?.name || "");
+  const [description, setDescription] = useState(file?.description || "");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState(file?.image || null);
+  const [imageError, setImageError] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const imageInputRef = useRef(null);
+
+  useEffect(() => {
+    if (file) {
+      setName(file.name || "");
+      setDescription(file.description || "");
+      setImagePreview(file.image || null);
+      setImageUrl("");
+    }
+  }, [file]);
+
+  const handleImageSelect = async (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    if (!selectedFile.type.startsWith("image/")) {
+      setImageError("Please select an image file");
+      return;
+    }
+
+    setImageError("");
+    try {
+      const dataUrl = await resizeImage(selectedFile);
+      setImagePreview(dataUrl);
+      setImageUrl("");
+    } catch (err) {
+      setImageError(err.message);
+    }
+  };
+
+  const handleImageUrlChange = (url) => {
+    setImageUrl(url);
+    if (url.trim()) {
+      setImagePreview(url.trim());
+    } else if (!file?.image) {
+      setImagePreview(null);
+    }
+  };
+
+  const clearImage = () => {
+    setImageUrl("");
+    setImagePreview(null);
+    setImageError("");
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updateFile(categoryId, file.id, {
+        name: name.trim(),
+        description: description.trim(),
+        image: imagePreview || null,
+      });
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      setError(err.message || "Failed to update file");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen || !file) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} disabled={isSubmitting}>
+          <X size={20} />
+        </button>
+
+        <h2>Edit File</h2>
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Name *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Description (optional)</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Preview Image (optional)</label>
+            <div className="image-input-group">
+              <input
+                type="text"
+                value={imageUrl}
+                onChange={(e) => handleImageUrlChange(e.target.value)}
+                placeholder="https://example.com/image.jpg"
+                className="image-url-input"
+              />
+              <span className="image-input-or">or</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => imageInputRef.current?.click()}
+              >
+                <Image size={14} />
+                Upload
+              </button>
+              <input
+                type="file"
+                ref={imageInputRef}
+                onChange={handleImageSelect}
+                accept="image/*"
+                style={{ display: "none" }}
+              />
+            </div>
+            {imageError && <p className="error" style={{ marginTop: "4px" }}>{imageError}</p>}
+            {imagePreview && (
+              <div className="image-preview">
+                <img src={imagePreview} alt="Preview" />
+                <button
+                  type="button"
+                  className="image-preview__remove"
+                  onClick={clearImage}
+                  title="Remove image"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {error && <p className="error">{error}</p>}
+
+          <div className="form-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   const [copied, setCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [downloadState, setDownloadState] = useState(null); // null | "downloading" | "complete"
@@ -142,10 +371,16 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
   };
 
   return (
-    <div className={`file-card file-card--torrent ${seeding ? "file-card--seeding" : ""}`}>
-      <div className="file-card__icon file-card__icon--torrent">
-        {seeding ? <Upload size={16} /> : <HardDrive size={16} />}
-      </div>
+    <div className={`file-card file-card--torrent ${seeding ? "file-card--seeding" : ""} ${file.image ? "file-card--with-image" : ""}`}>
+      {file.image ? (
+        <div className="file-card__image">
+          <img src={file.image} alt={file.name} />
+        </div>
+      ) : (
+        <div className="file-card__icon file-card__icon--torrent">
+          {seeding ? <Upload size={16} /> : <HardDrive size={16} />}
+        </div>
+      )}
       
       <div className="file-card__content">
         <h4 className="file-card__name">{file.name}</h4>
@@ -244,6 +479,16 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
         >
           <Download size={16} />
         </IconButton>
+        {canEdit && (
+          <IconButton
+            variant="ghost"
+            size="md"
+            onClick={onEdit}
+            title="Edit file"
+          >
+            <Pencil size={16} />
+          </IconButton>
+        )}
         {canDelete && (
           <IconButton
             variant="danger"
@@ -260,7 +505,7 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
   );
 }
 
-function FileCard({ file, canDelete, onDelete }) {
+function FileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   const [copied, setCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [peerCount, setPeerCount] = useState(null);
@@ -313,10 +558,16 @@ function FileCard({ file, canDelete, onDelete }) {
   };
 
   return (
-    <div className="file-card">
-      <div className="file-card__icon">
-        {getLinkIcon(file.linkType)}
-      </div>
+    <div className={`file-card ${file.image ? "file-card--with-image" : ""}`}>
+      {file.image ? (
+        <div className="file-card__image">
+          <img src={file.image} alt={file.name} />
+        </div>
+      ) : (
+        <div className="file-card__icon">
+          {getLinkIcon(file.linkType)}
+        </div>
+      )}
       
       <div className="file-card__content">
         <h4 className="file-card__name">{file.name}</h4>
@@ -363,6 +614,16 @@ function FileCard({ file, canDelete, onDelete }) {
         >
           <ExternalLink size={16} />
         </IconButton>
+        {canEdit && (
+          <IconButton
+            variant="ghost"
+            size="md"
+            onClick={onEdit}
+            title="Edit file"
+          >
+            <Pencil size={16} />
+          </IconButton>
+        )}
         {canDelete && (
           <IconButton
             variant="danger"
@@ -391,10 +652,11 @@ function getTimeAgo(timestamp) {
 }
 
 function FileList({ categoryId, onAddFile, canBlockFiles }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [files, setFiles] = useState({});
   const [blocklist, setBlocklist] = useState({});
   const [loading, setLoading] = useState(true);
+  const [editingFile, setEditingFile] = useState(null);
 
   useEffect(() => {
     if (!categoryId) return;
@@ -471,26 +733,45 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
     );
   }
 
+  const handleEditSuccess = () => {
+    // Refresh files after edit
+    getFiles(categoryId).then(setFiles);
+  };
+
   return (
-    <div className="file-list">
-      {fileList.map((file) => (
-        file.linkType === "torrent" ? (
-          <TorrentFileCard
-            key={file.id}
-            file={file}
-            canDelete={canBlockFiles}
-            onDelete={handleBlockFile}
-          />
-        ) : (
-          <FileCard 
-            key={file.id} 
-            file={file} 
-            canDelete={canBlockFiles}
-            onDelete={handleBlockFile}
-          />
-        )
-      ))}
-    </div>
+    <>
+      <div className="file-list">
+        {fileList.map((file) => (
+          file.linkType === "torrent" ? (
+            <TorrentFileCard
+              key={file.id}
+              file={file}
+              canDelete={canBlockFiles}
+              onDelete={handleBlockFile}
+              canEdit={user?.address === file.uploader}
+              onEdit={() => setEditingFile(file)}
+            />
+          ) : (
+            <FileCard 
+              key={file.id} 
+              file={file} 
+              canDelete={canBlockFiles}
+              onDelete={handleBlockFile}
+              canEdit={user?.address === file.uploader}
+              onEdit={() => setEditingFile(file)}
+            />
+          )
+        ))}
+      </div>
+      
+      <EditFileModal
+        isOpen={!!editingFile}
+        onClose={() => setEditingFile(null)}
+        file={editingFile}
+        categoryId={categoryId}
+        onSuccess={handleEditSuccess}
+      />
+    </>
   );
 }
 
