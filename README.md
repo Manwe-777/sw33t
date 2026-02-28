@@ -83,14 +83,7 @@ This way you don't need to keep the browser tab open, and your files remain avai
 
 ### Permissions
 
-Channel creators are admins with full permissions. Admins can:
-
-- Block files and users
-- Promote/demote other admins
-- Edit channel metadata
-- Create/delete categories
-
-Permissions use a bitwise system for efficient storage and checking.
+Channel creators become admins and can promote other users to help moderate. Admins can block files/users, edit channel settings, and manage categories.
 
 ## Scripts
 
