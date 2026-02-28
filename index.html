@@ -9,6 +9,23 @@
       // Pre-initialize globals before any modules load
       window.global = window;
       window.process = { env: {}, browser: true };
+      
+      // Handle SPA redirect from 404.html (GitHub Pages workaround)
+      (function() {
+        var redirect = sessionStorage.getItem('spa-redirect');
+        if (redirect) {
+          sessionStorage.removeItem('spa-redirect');
+          // Remove the base path prefix if present
+          var basePath = '/sw33t';
+          if (redirect.startsWith(basePath)) {
+            redirect = redirect.slice(basePath.length) || '/';
+          }
+          // Use history.replaceState to restore the URL without reload
+          if (redirect !== window.location.pathname) {
+            history.replaceState(null, '', basePath + redirect);
+          }
+        }
+      })();
     </script>
   </head>
   <body>
