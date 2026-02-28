@@ -2116,18 +2116,25 @@ main {
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.7);
-  border: none;
+  background: rgba(0, 0, 0, 0.7) !important;
+  border: none !important;
   color: #fff;
   cursor: pointer;
   display: grid;
   place-items: center;
   transition: background 0.15s;
+  margin: 0;
 }
 
 .image-preview__remove:hover {
-  background: #e53935;
+  background: #e53935 !important;
+}
+
+.image-preview__remove svg {
+  width: 14px;
+  height: 14px;
 }
