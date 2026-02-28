@@ -360,32 +360,34 @@ function ChannelPage() {
           <aside className="sidebar">
             <div className="sidebar-header">
               <div className="channel-header-row">
-                <ChannelAvatar 
-                  channel={channelId} 
-                  size={48}
-                  src={channelMeta?.avatar}
-                />
+                <div className="channel-avatar-wrapper">
+                  <ChannelAvatar 
+                    channel={channelId} 
+                    size={48}
+                    src={channelMeta?.avatar}
+                  />
+                  {canEditChannel && (
+                    <button 
+                      className="btn-icon channel-settings-btn"
+                      onClick={() => {
+                        if (categoryId) {
+                          navigate(`/c/${channelId}`);
+                        }
+                        startEditingChannel();
+                        setTimeout(() => {
+                          document.querySelector('.admin-dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 100);
+                      }}
+                      title="Channel settings"
+                    >
+                      <Settings size={16} />
+                    </button>
+                  )}
+                </div>
                 <div className="channel-header-text">
                   <h2>{channelMeta?.name || channelId}</h2>
                   <p>{channelMeta?.description || "A decentralized channel"}</p>
                 </div>
-                {canEditChannel && (
-                  <button 
-                    className="btn-icon channel-settings-btn"
-                    onClick={() => {
-                      if (categoryId) {
-                        navigate(`/c/${channelId}`);
-                      }
-                      startEditingChannel();
-                      setTimeout(() => {
-                        document.querySelector('.admin-dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }, 100);
-                    }}
-                    title="Channel settings"
-                  >
-                    <Settings size={18} />
-                  </button>
-                )}
               </div>
             </div>
             
