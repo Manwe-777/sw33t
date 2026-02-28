@@ -1,4 +1,4 @@
-import { getToolDb } from "./tooldb";
+import { getToolDb, getChannelKey } from "./tooldb";
 import { 
   PERMISSIONS, 
   ALL_PERMISSIONS, 
@@ -7,8 +7,13 @@ import {
   permissionsToString,
 } from "./permissions";
 
+// Channel meta uses frozen namespace (==) which is already unique per content
 const CHANNEL_META_KEY = "==channel-meta";
-const CATEGORIES_KEY = "categories";
+
+// Categories need to be namespaced by channel
+function getCategoriesKey() {
+  return getChannelKey("categories");
+}
 
 let channelMetaListeners = [];
 let currentChannelMeta = null;
@@ -344,7 +349,8 @@ export async function getCategories() {
   if (!db) return {};
   
   try {
-    const categories = await db.getData(CATEGORIES_KEY);
+    const key = getCategoriesKey();
+    const categories = await db.getData(key);
     return categories || {};
   } catch (err) {
     console.error("Failed to get categories:", err);
@@ -374,7 +380,7 @@ export async function createCategory(id, name, icon = "folder") {
   };
   
   const updated = { ...existing, [id]: category };
-  await db.putData(CATEGORIES_KEY, updated);
+  await db.putData(getCategoriesKey(), updated);
   
   return category;
 }
@@ -413,7 +419,7 @@ export async function deleteCategory(categoryId) {
     },
   };
   
-  await db.putData(CATEGORIES_KEY, updated);
+  await db.putData(getCategoriesKey(), updated);
   return updated;
 }
 
@@ -446,7 +452,7 @@ export async function restoreCategory(categoryId) {
     [categoryId]: categoryData,
   };
   
-  await db.putData(CATEGORIES_KEY, updated);
+  await db.putData(getCategoriesKey(), updated);
   return updated;
 }
 
@@ -482,8 +488,9 @@ export function subscribeToCategories(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
-  db.subscribeData(CATEGORIES_KEY);
-  db.addKeyListener(CATEGORIES_KEY, (msg) => {
+  const key = getCategoriesKey();
+  db.subscribeData(key);
+  db.addKeyListener(key, (msg) => {
     callback(msg.v || {});
   });
   

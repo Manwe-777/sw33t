@@ -141,10 +141,12 @@ function categoriesVerificator(msg, previousData) {
  * Set up custom verificators for permission enforcement
  */
 function setupVerificators(dbInstance) {
-  // Verificator for blocklist keys (e.g., "categoryId_blocklist")
+  // Verificator for blocklist keys (e.g., "ch:channelId:categoryId_blocklist")
+  // The key pattern will match any key containing "_blocklist"
   dbInstance.addCustomVerification("_blocklist", blocklistVerificator);
   
-  // Verificator for categories
+  // Verificator for categories (e.g., "ch:channelId:categories")
+  // The key pattern will match any key containing "categories"
   dbInstance.addCustomVerification("categories", categoriesVerificator);
   
   console.log("Custom verificators registered for permission enforcement");
@@ -164,4 +166,28 @@ export function getToolDb() {
  */
 export function getCurrentTopic() {
   return currentTopic;
+}
+
+/**
+ * Get the current channel ID (without sw33t- prefix)
+ * @returns {string|null}
+ */
+export function getCurrentChannelId() {
+  if (!currentTopic) return null;
+  return currentTopic.replace(/^sw33t-/, "");
+}
+
+/**
+ * Create a channel-namespaced key
+ * @param {string} key - The base key
+ * @returns {string} The namespaced key
+ */
+export function getChannelKey(key) {
+  const channelId = getCurrentChannelId();
+  if (!channelId) {
+    console.warn("No channel connected, using key without namespace:", key);
+    return key;
+  }
+  // Use format: ch:{channelId}:{key}
+  return `ch:${channelId}:${key}`;
 }

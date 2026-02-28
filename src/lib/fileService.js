@@ -1,4 +1,4 @@
-import { getToolDb } from "./tooldb";
+import { getToolDb, getChannelKey } from "./tooldb";
 import { userHasPermission, getChannelMetaSync, PERMISSIONS } from "./channelService";
 
 function sanitizeKey(key) {
@@ -6,11 +6,13 @@ function sanitizeKey(key) {
 }
 
 function getFilesKey(categoryId) {
-  return `${sanitizeKey(categoryId)}_files`;
+  // Namespace by channel: ch:{channelId}:{categoryId}_files
+  return getChannelKey(`${sanitizeKey(categoryId)}_files`);
 }
 
 function getBlocklistKey(categoryId) {
-  return `${sanitizeKey(categoryId)}_blocklist`;
+  // Namespace by channel: ch:{channelId}:{categoryId}_blocklist
+  return getChannelKey(`${sanitizeKey(categoryId)}_blocklist`);
 }
 
 export async function getFiles(categoryId) {
