@@ -173,7 +173,14 @@ export function isCreator(meta, userAddress) {
  * Get user's permission value (0 if not admin)
  */
 export function getUserPermissions(meta, userAddress) {
-  if (!meta || !meta.admins || !userAddress) return 0;
+  if (!meta || !userAddress) return 0;
+  
+  // Creator ALWAYS has all permissions, regardless of what's in admins
+  if (meta.creator === userAddress) {
+    return ALL_PERMISSIONS;
+  }
+  
+  if (!meta.admins) return 0;
   const migrated = migrateAdminsFormat(meta);
   return migrated.admins[userAddress] || 0;
 }
