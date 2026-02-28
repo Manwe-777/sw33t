@@ -53,32 +53,6 @@ Open http://localhost:5173 in your browser.
 4. Share files by adding links or uploading via WebTorrent
 5. Open another browser tab with the same channel to see P2P sync in action
 
-## Project Structure
-
-```
-src/
-├── components/       # React components
-│   ├── HomePage.jsx       # Channel join form
-│   ├── ChannelPage.jsx    # Main channel view
-│   ├── CategoryList.jsx   # Category sidebar
-│   ├── FileList.jsx       # File listing with torrent support
-│   ├── AddFileModal.jsx   # Share links or upload files
-│   ├── AuthModal.jsx      # Sign up/Sign in
-│   └── UserPanel.jsx      # User info and settings
-├── context/          # React context providers
-│   └── AuthContext.jsx    # Authentication state
-├── hooks/            # Custom React hooks
-│   └── useProfile.js      # User profile lookup
-├── lib/              # Core services
-│   ├── tooldb.js          # ToolDB connection manager
-│   ├── channelService.js  # Channel metadata & categories
-│   ├── fileService.js     # File CRUD operations
-│   ├── permissions.js     # Bitwise permission system
-│   ├── userService.js     # User profiles
-│   └── torrentService.js  # WebTorrent client
-└── App.jsx           # Router configuration
-```
-
 ## How It Works
 
 ### ToolDB
@@ -99,7 +73,13 @@ Files can be shared directly from your browser using WebTorrent:
 3. The infohash is stored in ToolDB
 4. Other users download the file P2P via WebRTC
 
-**Note**: Your browser tab must stay open to seed files.
+**Recommended seeding workflow**: Browser-based seeding requires keeping your tab open. For long-term availability, we recommend:
+
+1. Upload your file with Sw33t to get the magnet link
+2. Copy the magnet link and open it in a desktop torrent client (qBittorrent, Transmission, etc.)
+3. Seed from the desktop client instead
+
+This way you don't need to keep the browser tab open, and your files remain available 24/7.
 
 ### Permissions
 
