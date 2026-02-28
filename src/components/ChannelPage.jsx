@@ -21,6 +21,7 @@ import {
   isCategoryDeleted,
 } from "../lib/channelService";
 import { permissionsToString, permissionsToBinary } from "../lib/permissions";
+import { addRecentChannel, updateRecentChannelName } from "../lib/recentChannels";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "./AuthModal";
 import UserPanel from "./UserPanel";
@@ -30,8 +31,10 @@ import FileList from "./FileList";
 import AddFileModal from "./AddFileModal";
 import PermissionEditor from "./PermissionEditor";
 import AdminItem from "./AdminItem";
-import { Shield, Settings, Users, Ban, Folder, Plus, Save, X, Crown, UserPlus } from "lucide-react";
+import SettingsModal from "./SettingsModal";
+import { Shield, Settings, Users, Ban, Folder, Plus, Save, X, Crown, UserPlus, Palette } from "lucide-react";
 import { ChannelAvatar, UserAvatar } from "./Avatar";
+import ThemeToggle from "./ThemeToggle";
 
 function ChannelPage() {
   const { channelId, categoryId } = useParams();
@@ -61,6 +64,7 @@ function ChannelPage() {
   const [newAdminAddress, setNewAdminAddress] = useState("");
   const [isPromoting, setIsPromoting] = useState(false);
   const [showAddFile, setShowAddFile] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editingAdminPerms, setEditingAdminPerms] = useState(null); // address being edited
   const [isSavingPerms, setIsSavingPerms] = useState(false);
 
@@ -76,6 +80,7 @@ function ChannelPage() {
         setDbReady(true);
         setConnected(true);
         setConnecting(false);
+        addRecentChannel(channelId);
         console.log("Connected to channel:", channelId);
       } catch (err) {
         console.error("Connection error:", err);
@@ -142,6 +147,11 @@ function ChannelPage() {
       setUserIsAdmin(isAdmin(migratedMeta, user?.address));
       setUserIsCreator(isCreator(migratedMeta, user?.address));
       setUserPermissions(getUserPermissions(migratedMeta, user?.address));
+      
+      // Update recent channel name when we get the display name
+      if (migratedMeta?.name) {
+        updateRecentChannelName(channelId, migratedMeta.name);
+      }
     });
 
     return () => {
@@ -264,6 +274,16 @@ function ChannelPage() {
             <div className="header-left">
               <h1><Link to="/">Sw33t</Link></h1>
             </div>
+            <div className="header-right">
+              <button 
+                className="settings-btn" 
+                onClick={() => setShowSettings(true)}
+                title="Theme settings"
+              >
+                <Palette size={18} />
+              </button>
+              <ThemeToggle />
+            </div>
           </div>
         </header>
         <main>
@@ -272,6 +292,7 @@ function ChannelPage() {
             <p>Connecting to {channelId}...</p>
           </div>
         </main>
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
       </>
     );
   }
@@ -284,6 +305,16 @@ function ChannelPage() {
             <div className="header-left">
               <h1><Link to="/">Sw33t</Link></h1>
             </div>
+            <div className="header-right">
+              <button 
+                className="settings-btn" 
+                onClick={() => setShowSettings(true)}
+                title="Theme settings"
+              >
+                <Palette size={18} />
+              </button>
+              <ThemeToggle />
+            </div>
           </div>
         </header>
         <main>
@@ -292,6 +323,7 @@ function ChannelPage() {
             <button className="btn btn-primary" onClick={() => navigate("/")}>Back to Home</button>
           </div>
         </main>
+        <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
       </>
     );
   }
@@ -308,8 +340,18 @@ function ChannelPage() {
               <span className="peer-badge">{peerCount} peers</span>
             </div>
           </div>
-          <SeedingStatus />
-          {isAuthenticated && <UserPanel />}
+          <div className="header-right">
+            <SeedingStatus />
+            <button 
+              className="settings-btn" 
+              onClick={() => setShowSettings(true)}
+              title="Theme settings"
+            >
+              <Palette size={18} />
+            </button>
+            <ThemeToggle />
+            {isAuthenticated && <UserPanel />}
+          </div>
         </div>
       </header>
 
@@ -592,7 +634,7 @@ function ChannelPage() {
                 {!userIsAdmin && Object.keys(categories).length === 0 && isAuthenticated && (
                   <div className="card">
                     <h3>Get Started</h3>
-                    <p style={{ color: "#888" }}>Create a category from the sidebar to start sharing files.</p>
+                    <p className="text-muted">Create a category from the sidebar to start sharing files.</p>
                   </div>
                 )}
               </>
@@ -613,6 +655,11 @@ function ChannelPage() {
         categoryId={currentCategory?.id}
         categoryName={currentCategory?.name}
         onSuccess={() => {}}
+      />
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
       />
     </>
   );

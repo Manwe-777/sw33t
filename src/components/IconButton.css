@@ -1,10 +1,11 @@
 .icon-btn {
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: none;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition);
   padding: 0;
   line-height: 1;
 }
@@ -15,12 +16,14 @@
 }
 
 .icon-btn__icon {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-btn__icon svg {
   display: block;
+  flex-shrink: 0;
 }
 
 /* Sizes */
@@ -41,61 +44,62 @@
 
 /* Variants */
 .icon-btn--default {
-  color: #888;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
 }
 
 .icon-btn--default:hover:not(:disabled),
 .icon-btn--default.active {
-  color: #fff;
-  border-color: #667eea;
+  color: var(--text-primary);
+  border-color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .icon-btn--danger {
-  color: #888;
-  border: 1px solid #333;
-  border-radius: 6px;
-  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
 }
 
 .icon-btn--danger:hover:not(:disabled) {
-  color: #ff6b6b;
-  border-color: #ff6b6b;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-subtle);
 }
 
 .icon-btn--ghost {
-  color: #666;
-  border-radius: 4px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
 }
 
 .icon-btn--ghost:hover:not(:disabled) {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.1);
+  color: var(--accent);
+  background: var(--accent-subtle);
 }
 
 .icon-btn--inline {
-  color: #888;
-  background: rgba(102, 126, 234, 0.1);
-  border-radius: 4px;
+  color: var(--text-muted);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-sm);
 }
 
 .icon-btn--inline:hover:not(:disabled) {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.25);
+  color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .icon-btn--primary {
   color: #fff;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 6px;
+  background: var(--accent);
+  border-radius: var(--radius-md);
   border: none;
 }
 
 .icon-btn--primary:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  transform: translateY(-1px);
+  background: var(--accent-hover);
 }
 
 /* Input addon (for copy buttons inside inputs) */

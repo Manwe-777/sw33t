@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
+import { X } from "lucide-react";
 
 function AuthModal({ isOpen, onClose, onSuccess }) {
   const [mode, setMode] = useState("signin"); // signin, signup, import
@@ -101,7 +102,9 @@ function AuthModal({ isOpen, onClose, onSuccess }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>×</button>
+        <button className="modal-close" onClick={onClose}>
+          <X size={20} />
+        </button>
         
         <h2>
           {mode === "signup" && "Create Account"}
@@ -125,12 +128,14 @@ function AuthModal({ isOpen, onClose, onSuccess }) {
               />
             </div>
             {displayError && <p className="error">{displayError}</p>}
-            <button type="submit" disabled={isLoading}>
-              {isLoading ? "Importing..." : "Import Keys"}
-            </button>
-            <button type="button" className="secondary" onClick={() => setMode("signin")}>
-              Cancel
-            </button>
+            <div className="auth-form-actions">
+              <button type="submit" className="btn btn-primary" disabled={isLoading}>
+                {isLoading ? "Importing..." : "Import Keys"}
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setMode("signin")}>
+                Cancel
+              </button>
+            </div>
           </form>
         ) : (
           <form onSubmit={handleSubmit}>
@@ -167,9 +172,11 @@ function AuthModal({ isOpen, onClose, onSuccess }) {
               </div>
             )}
             {displayError && <p className="error">{displayError}</p>}
-            <button type="submit" disabled={isLoading}>
-              {isLoading ? "Loading..." : mode === "signup" ? "Create Account" : "Sign In"}
-            </button>
+            <div className="auth-form-actions">
+              <button type="submit" className="btn btn-primary" disabled={isLoading}>
+                {isLoading ? "Loading..." : mode === "signup" ? "Create Account" : "Sign In"}
+              </button>
+            </div>
           </form>
         )}
 
@@ -193,25 +200,23 @@ function AuthModal({ isOpen, onClose, onSuccess }) {
               )}
             </div>
             <div className="auth-options">
-              <button type="button" className="anon-btn" onClick={handleAnonymous}>
+              <button type="button" className="btn btn-secondary" onClick={handleAnonymous}>
                 Continue Anonymously
               </button>
-              <div className="import-section">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept=".json"
-                  onChange={handleFileImport}
-                  style={{ display: "none" }}
-                />
-                <button
-                  type="button"
-                  className="import-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Import Keys from File
-                </button>
-              </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json"
+                onChange={handleFileImport}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Import Keys from File
+              </button>
             </div>
           </div>
         )}

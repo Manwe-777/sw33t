@@ -235,7 +235,7 @@ function UserPanel() {
         <div className="user-panel-dropdown">
           <h4>Export Keys</h4>
           <form onSubmit={handleExport}>
-            <p style={{ color: "#888", fontSize: "0.85rem", marginBottom: 12 }}>
+            <p className="dropdown-hint">
               Create an encrypted backup of your account keys.
             </p>
             <div className="form-row">

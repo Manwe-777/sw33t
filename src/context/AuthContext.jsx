@@ -87,16 +87,25 @@ export function AuthProvider({ children }) {
       const loginName = session.loginName || session.name;
       await db.userAccount.setUser({ pub: session.pub, priv: session.priv, name: loginName }, loginName);
       
-      const displayName = session.displayName || loginName;
-      const avatar = session.avatar || null;
+      // First, try to get profile from ToolDB (source of truth)
+      let displayName = session.displayName || loginName;
+      let avatar = session.avatar || null;
       
-      // Sync profile to ToolDB (stored in private namespace)
       try {
-        if (displayName) await saveUsername(displayName);
-        if (avatar) await saveAvatar(avatar);
-        console.log("Profile synced to ToolDB");
+        const profile = await getMyProfile();
+        if (profile) {
+          // Use ToolDB profile data if available (it's the source of truth)
+          if (profile.username) displayName = profile.username;
+          if (profile.avatar) avatar = profile.avatar;
+          console.log("Profile loaded from ToolDB:", profile);
+        } else {
+          // No profile in ToolDB yet, sync from localStorage
+          if (displayName) await saveUsername(displayName);
+          if (avatar) await saveAvatar(avatar);
+          console.log("Profile synced to ToolDB from localStorage");
+        }
       } catch (profileErr) {
-        console.warn("Failed to sync profile to ToolDB:", profileErr);
+        console.warn("Failed to load/sync profile:", profileErr);
       }
       
       setUser({
@@ -106,6 +115,11 @@ export function AuthProvider({ children }) {
         avatar: avatar,
       });
       setIsAuthenticated(true);
+      
+      // Update localStorage with the latest profile data
+      const updatedSession = { ...session, displayName, avatar };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession));
+      
       return true;
     } catch (err) {
       console.error("Failed to restore session:", err);
@@ -224,13 +238,40 @@ export function AuthProvider({ children }) {
       await db.userAccount.setUser(decrypted, decrypted.name);
       db.userAccount._username = encryptedAccount.name;
       
+      // Get profile from ToolDB (source of truth for display name and avatar)
+      let displayName = encryptedAccount.name;
+      let avatar = null;
+      
+      try {
+        const profile = await getMyProfile();
+        if (profile) {
+          if (profile.username) displayName = profile.username;
+          if (profile.avatar) avatar = profile.avatar;
+          console.log("Profile loaded from ToolDB after import:", profile);
+        }
+      } catch (profileErr) {
+        console.warn("Failed to load profile after import:", profileErr);
+      }
+      
       setUser({
         address: db.userAccount.getAddress(),
-        username: encryptedAccount.name,
+        username: displayName,
         loginName: encryptedAccount.name,
+        avatar: avatar,
       });
       setIsAuthenticated(true);
-      await saveSession(db, encryptedAccount.name);
+      await saveSession(db, displayName);
+      
+      // Also save avatar to localStorage
+      const stored = localStorage.getItem(SESSION_KEY);
+      if (stored && avatar) {
+        try {
+          const session = JSON.parse(stored);
+          session.avatar = avatar;
+          localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        } catch {}
+      }
+      
       return true;
     } catch (err) {
       setError(err.message || "Key import failed");

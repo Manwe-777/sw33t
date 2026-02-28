@@ -1,9 +1,19 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { Palette } from "lucide-react";
+import ThemeToggle from "./ThemeToggle";
+import SettingsModal from "./SettingsModal";
+import { getRecentChannels } from "../lib/recentChannels";
 
 function HomePage() {
   const [channelInput, setChannelInput] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [recentChannels, setRecentChannels] = useState([]);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setRecentChannels(getRecentChannels());
+  }, []);
 
   const handleJoin = (e) => {
     e.preventDefault();
@@ -19,6 +29,16 @@ function HomePage() {
         <div className="header-content">
           <div className="header-left">
             <h1>Sw33t</h1>
+          </div>
+          <div className="header-right">
+            <button 
+              className="settings-btn" 
+              onClick={() => setShowSettings(true)}
+              title="Theme settings"
+            >
+              <Palette size={18} />
+            </button>
+            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -42,6 +62,20 @@ function HomePage() {
               <button type="submit" className="btn btn-primary">Join</button>
             </form>
 
+            {recentChannels.length > 0 && (
+              <div className="recent-channels">
+                <span className="recent-label">Recent:</span>
+                {recentChannels.map((channel, i) => (
+                  <span key={channel.id}>
+                    <Link to={`/c/${encodeURIComponent(channel.id)}`}>
+                      {channel.name}
+                    </Link>
+                    {i < recentChannels.length - 1 && ", "}
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="instructions">
               <h4>How it works</h4>
               <ol>
@@ -53,6 +87,11 @@ function HomePage() {
           </div>
         </div>
       </main>
+
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </>
   );
 }

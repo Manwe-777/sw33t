@@ -15,6 +15,21 @@ function getCategoriesKey() {
 let channelMetaListeners = [];
 let currentChannelMeta = null;
 
+// Local listeners for immediate UI updates on local writes
+let localMetaListeners = [];
+
+// Notify local listeners (called after local writes)
+function notifyMetaListeners(meta) {
+  currentChannelMeta = meta;
+  localMetaListeners.forEach(cb => {
+    try {
+      cb(meta);
+    } catch (err) {
+      console.error("Meta listener error:", err);
+    }
+  });
+}
+
 // Re-export permissions for convenience
 export { PERMISSIONS } from "./permissions";
 
@@ -196,7 +211,7 @@ export async function updateChannelMeta(updates) {
   
   const newMeta = { ...migrateAdminsFormat(existingMeta), ...updates };
   await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
+  notifyMetaListeners(newMeta);
   return newMeta;
 }
 
@@ -226,7 +241,7 @@ export async function promoteToAdmin(targetAddress, permissions = DEFAULT_ADMIN_
   };
   
   await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
+  notifyMetaListeners(newMeta);
   return newMeta;
 }
 
@@ -264,7 +279,7 @@ export async function updateAdminPermissions(targetAddress, permissions) {
   };
   
   await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
+  notifyMetaListeners(newMeta);
   return newMeta;
 }
 
@@ -291,7 +306,7 @@ export async function demoteAdmin(targetAddress) {
   };
   
   await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
+  notifyMetaListeners(newMeta);
   return newMeta;
 }
 
@@ -484,6 +499,14 @@ export function subscribeToChannelMeta(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
+  // Add to local listeners for immediate updates on local writes
+  localMetaListeners.push(callback);
+  
+  // If we have cached data, call immediately
+  if (currentChannelMeta) {
+    callback(currentChannelMeta);
+  }
+  
   db.subscribeData(getChannelMetaKey());
   
   const listener = (msg) => {
@@ -498,6 +521,7 @@ export function subscribeToChannelMeta(callback) {
   
   return () => {
     channelMetaListeners = channelMetaListeners.filter(l => l !== listener);
+    localMetaListeners = localMetaListeners.filter(cb => cb !== callback);
   };
 }
 
