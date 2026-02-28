@@ -669,7 +669,8 @@ main {
   font-size: 0.9rem;
 }
 
-.form-group input {
+.form-group input,
+.form-group textarea {
   width: 100%;
   padding: 12px 16px;
   border: 2px solid #333;
@@ -677,11 +678,18 @@ main {
   background: #0f0f1a;
   color: #eee;
   font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: #667eea;
+}
+
+.form-group textarea {
+  min-height: 80px;
 }
 
 .modal-content button[type="submit"] {
@@ -2073,15 +2081,21 @@ main {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
-.image-url-input {
+.image-input-group input[type="text"] {
   flex: 1;
+  min-width: 200px;
 }
 
 .image-input-or {
   color: #666;
   font-size: 0.85rem;
+}
+
+.image-input-group .btn {
+  flex-shrink: 0;
 }
 
 .image-preview {
