@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback } from "react";
 import { getToolDb } from "../lib/tooldb";
-import { updateMyProfile, getMyProfile } from "../lib/userService";
+import { setUsername as saveUsername, setAvatar as saveAvatar, getMyProfile } from "../lib/userService";
 
 const AuthContext = createContext(null);
 
@@ -90,15 +90,13 @@ export function AuthProvider({ children }) {
       const displayName = session.displayName || loginName;
       const avatar = session.avatar || null;
       
-      // Sync profile to this channel's ToolDB (profile is per-channel)
+      // Sync profile to ToolDB (stored in private namespace)
       try {
-        await updateMyProfile({ 
-          username: displayName,
-          avatar: avatar,
-        });
-        console.log("Profile synced to channel");
+        if (displayName) await saveUsername(displayName);
+        if (avatar) await saveAvatar(avatar);
+        console.log("Profile synced to ToolDB");
       } catch (profileErr) {
-        console.warn("Failed to sync profile to channel:", profileErr);
+        console.warn("Failed to sync profile to ToolDB:", profileErr);
       }
       
       setUser({
@@ -128,8 +126,8 @@ export function AuthProvider({ children }) {
       // Explicitly set the username since signUp may not do it
       db.userAccount._username = username;
       
-      // Save profile to ToolDB so other users can see it
-      await updateMyProfile({ username });
+      // Save username to ToolDB private namespace so other users can see it
+      await saveUsername(username);
       
       setUser({
         address: db.userAccount.getAddress(),
@@ -164,9 +162,9 @@ export function AuthProvider({ children }) {
       let displayName = profile?.username || username;
       let avatar = profile?.avatar || null;
       
-      // If no profile exists yet, create one
-      if (!profile) {
-        await updateMyProfile({ username });
+      // If no profile exists yet, save username to ToolDB
+      if (!profile?.username) {
+        await saveUsername(username);
       }
       
       setUser({
@@ -196,12 +194,12 @@ export function AuthProvider({ children }) {
     try {
       await db.anonSignIn();
       
-      // Create profile for anonymous user
+      // Save username to ToolDB for anonymous user
       const username = "Anonymous";
       try {
-        await updateMyProfile({ username });
+        await saveUsername(username);
       } catch (profileErr) {
-        console.warn("Failed to create anon profile:", profileErr);
+        console.warn("Failed to save anon username:", profileErr);
       }
       
       updateUserState(db);
@@ -284,8 +282,8 @@ export function AuthProvider({ children }) {
 
     const trimmedName = newDisplayName.trim();
     
-    // Save to ToolDB so other users can see it
-    await updateMyProfile({ username: trimmedName });
+    // Save to ToolDB private namespace so other users can see it
+    await saveUsername(trimmedName);
     
     setUser((prev) => ({
       ...prev,
@@ -302,8 +300,8 @@ export function AuthProvider({ children }) {
 
     const url = avatarUrl?.trim() || null;
     
-    // Save to ToolDB so other users can see it
-    await updateMyProfile({ avatar: url });
+    // Save to ToolDB private namespace so other users can see it
+    await saveAvatar(url);
     
     setUser((prev) => ({
       ...prev,

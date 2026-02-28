@@ -1,11 +1,47 @@
 import { getToolDb } from "./tooldb";
 
 /**
- * Get the profile key for a user address
- * Format: {address}_profile (dots not allowed in ToolDB keys)
+ * User profile data is stored in ToolDB's private namespace.
+ * Private namespace format: :{address}.{key}
+ * Only the address owner can write, but anyone can read.
+ * 
+ * We store: name, avatar as separate keys for efficiency
  */
-function getProfileKey(address) {
-  return `${address}_profile`;
+
+/**
+ * Get a user's username from their private namespace
+ */
+export async function getProfile(address) {
+  const db = getToolDb();
+  if (!db || !address) {
+    console.log("getProfile: db or address missing", { db: !!db, address });
+    return null;
+  }
+  
+  try {
+    // Fetch name from private namespace
+    const nameKey = `:${address}.name`;
+    const avatarKey = `:${address}.avatar`;
+    
+    console.log("getProfile: fetching keys", nameKey, avatarKey);
+    
+    const [username, avatar] = await Promise.all([
+      db.getData(nameKey),
+      db.getData(avatarKey),
+    ]);
+    
+    const profile = {
+      address,
+      username: username || null,
+      avatar: avatar || null,
+    };
+    
+    console.log("getProfile: result for", address.slice(0, 8), ":", profile);
+    return profile;
+  } catch (err) {
+    console.error("Failed to get profile:", err);
+    return null;
+  }
 }
 
 /**
@@ -20,61 +56,39 @@ export async function getMyProfile() {
 }
 
 /**
- * Get a user's profile by their address
+ * Set the current user's username (stored in private namespace)
  */
-export async function getProfile(address) {
-  const db = getToolDb();
-  if (!db || !address) {
-    console.log("getProfile: db or address missing", { db: !!db, address });
-    return null;
-  }
-  
-  try {
-    const key = getProfileKey(address);
-    console.log("getProfile: fetching key", key);
-    const profile = await db.getData(key);
-    console.log("getProfile: result for", address.slice(0, 8), ":", profile);
-    return profile || null;
-  } catch (err) {
-    console.error("Failed to get profile:", err);
-    return null;
-  }
-}
-
-/**
- * Update the current user's profile
- */
-export async function updateMyProfile(updates) {
+export async function setUsername(username) {
   const db = getToolDb();
   if (!db || !db.userAccount) throw new Error("Not authenticated");
   
+  // putData with true = private namespace (automatically prefixes with :address.)
+  await db.putData("name", username, true);
+  console.log("Username saved to ToolDB:", username);
+  
+  // Update cache
   const address = db.userAccount.getAddress();
-  const existing = await getProfile(address) || {};
+  updateProfileCache(address, { username });
   
-  const newProfile = {
-    ...existing,
-    ...updates,
-    address,
-    updatedAt: Date.now(),
-  };
-  
-  await db.putData(getProfileKey(address), newProfile);
-  console.log("Profile updated:", newProfile);
-  return newProfile;
+  return username;
 }
 
 /**
- * Set username in profile
- */
-export async function setUsername(username) {
-  return updateMyProfile({ username });
-}
-
-/**
- * Set avatar in profile
+ * Set the current user's avatar (stored in private namespace)
  */
 export async function setAvatar(avatar) {
-  return updateMyProfile({ avatar });
+  const db = getToolDb();
+  if (!db || !db.userAccount) throw new Error("Not authenticated");
+  
+  // putData with true = private namespace
+  await db.putData("avatar", avatar, true);
+  console.log("Avatar saved to ToolDB:", avatar);
+  
+  // Update cache
+  const address = db.userAccount.getAddress();
+  updateProfileCache(address, { avatar });
+  
+  return avatar;
 }
 
 /**
@@ -84,14 +98,29 @@ export function subscribeToProfile(address, callback) {
   const db = getToolDb();
   if (!db || !address) return () => {};
   
-  const key = getProfileKey(address);
-  db.subscribeData(key);
+  const nameKey = `:${address}.name`;
+  const avatarKey = `:${address}.avatar`;
   
-  const listener = (msg) => {
-    callback(msg.v || null);
+  // Subscribe to both keys
+  db.subscribeData(nameKey);
+  db.subscribeData(avatarKey);
+  
+  let currentProfile = { address, username: null, avatar: null };
+  
+  const nameListener = (msg) => {
+    currentProfile = { ...currentProfile, username: msg.v || null };
+    updateProfileCache(address, { username: msg.v });
+    callback(currentProfile);
   };
   
-  db.addKeyListener(key, listener);
+  const avatarListener = (msg) => {
+    currentProfile = { ...currentProfile, avatar: msg.v || null };
+    updateProfileCache(address, { avatar: msg.v });
+    callback(currentProfile);
+  };
+  
+  db.addKeyListener(nameKey, nameListener);
+  db.addKeyListener(avatarKey, avatarListener);
   
   return () => {};
 }
@@ -121,14 +150,23 @@ const profileCache = new Map();
 const profileListeners = new Map();
 
 /**
+ * Update profile cache
+ */
+function updateProfileCache(address, updates) {
+  const existing = profileCache.get(address) || { address, username: null, avatar: null };
+  profileCache.set(address, { ...existing, ...updates });
+}
+
+/**
  * Get a profile with caching and auto-subscription
  */
 export async function getCachedProfile(address) {
   if (!address) return null;
   
-  // Return cached if available
-  if (profileCache.has(address)) {
-    return profileCache.get(address);
+  // Return cached if available and has data
+  const cached = profileCache.get(address);
+  if (cached && (cached.username || cached.avatar)) {
+    return cached;
   }
   
   // Fetch and cache
@@ -166,4 +204,20 @@ export function getDisplayName(address, fallbackToAddress = true) {
   }
   
   return null;
+}
+
+/**
+ * Save username on login/signup (called from AuthContext)
+ */
+export async function saveUsernameOnAuth(username) {
+  if (!username) return;
+  
+  const db = getToolDb();
+  if (!db || !db.userAccount) return;
+  
+  try {
+    await setUsername(username);
+  } catch (err) {
+    console.error("Failed to save username to ToolDB:", err);
+  }
 }
