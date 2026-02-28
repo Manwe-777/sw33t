@@ -14,6 +14,7 @@ import {
   isSeeding,
   formatBytes,
   formatSpeed,
+  subscribeToPeerCount,
 } from "../lib/torrentService";
 import { useAuth } from "../context/AuthContext";
 import { UserAvatar } from "./Avatar";
@@ -44,10 +45,19 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
   const [downloadState, setDownloadState] = useState(null); // null | "downloading" | "complete"
   const [progress, setProgress] = useState(null);
   const [downloadedFile, setDownloadedFile] = useState(null); // { url, name }
+  const [peerCount, setPeerCount] = useState(null); // null = loading, number = count
   
   const timeAgo = getTimeAgo(file.createdAt);
   const seeding = isSeeding(file.link);
   const status = getTorrentStatus(file.link);
+  
+  // Subscribe to peer count updates
+  useEffect(() => {
+    const unsubscribe = subscribeToPeerCount(file.link, (count) => {
+      setPeerCount(count);
+    });
+    return unsubscribe;
+  }, [file.link]);
   
   const copyLink = async () => {
     try {
@@ -156,12 +166,14 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
             <Clock size={12} />
             {timeAgo}
           </span>
-          {(seeding || status) && (
-            <span className="file-card__peers">
-              <Users size={12} />
-              {status?.peers || 0} peers
-            </span>
-          )}
+          <span className={`file-card__peers ${peerCount === 0 ? 'file-card__peers--none' : peerCount > 0 ? 'file-card__peers--available' : ''}`}>
+            <Users size={12} />
+            {peerCount === null ? (
+              <span className="peer-count-loading">...</span>
+            ) : (
+              <span>{peerCount} {peerCount === 1 ? 'seeder' : 'seeders'}</span>
+            )}
+          </span>
         </div>
         
         {downloadState === "downloading" && progress && (
@@ -251,9 +263,21 @@ function TorrentFileCard({ file, canDelete, onDelete }) {
 function FileCard({ file, canDelete, onDelete }) {
   const [copied, setCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [peerCount, setPeerCount] = useState(null);
   
   const formattedLink = formatLink(file.link, file.linkType);
   const timeAgo = getTimeAgo(file.createdAt);
+  const isMagnet = file.linkType === "magnet";
+  
+  // Subscribe to peer count for magnet links
+  useEffect(() => {
+    if (!isMagnet) return;
+    
+    const unsubscribe = subscribeToPeerCount(file.link, (count) => {
+      setPeerCount(count);
+    });
+    return unsubscribe;
+  }, [file.link, isMagnet]);
   
   const copyLink = async () => {
     try {
@@ -309,6 +333,16 @@ function FileCard({ file, canDelete, onDelete }) {
             <UserAvatar address={file.uploader} size={16} />
             {file.uploader?.slice(0, 6)}...
           </span>
+          {isMagnet && (
+            <span className={`file-card__peers ${peerCount === 0 ? 'file-card__peers--none' : peerCount > 0 ? 'file-card__peers--available' : ''}`}>
+              <Users size={12} />
+              {peerCount === null ? (
+                <span className="peer-count-loading">...</span>
+              ) : (
+                <span>{peerCount} {peerCount === 1 ? 'seeder' : 'seeders'}</span>
+              )}
+            </span>
+          )}
         </div>
       </div>
       

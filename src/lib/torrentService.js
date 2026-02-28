@@ -364,3 +364,138 @@ export function formatBytes(bytes) {
 export function formatSpeed(bytesPerSec) {
   return formatBytes(bytesPerSec) + "/s";
 }
+
+// Cache for peer counts to avoid repeated lookups
+const peerCountCache = new Map(); // infohash -> { count, timestamp, torrent }
+const PEER_COUNT_CACHE_TTL = 30000; // 30 seconds
+
+/**
+ * Get the number of seeders/peers for a torrent without downloading
+ * @param {string} torrentId - Infohash or magnet URI
+ * @param {Function} onUpdate - Callback when peer count updates
+ * @returns {Promise<{ peers: number, infohash: string }>}
+ */
+export function getPeerCount(torrentId, onUpdate) {
+  return new Promise((resolve) => {
+    const wt = getClient();
+    const infohash = extractInfohash(torrentId);
+    
+    // Check cache first
+    const cached = peerCountCache.get(infohash);
+    if (cached && Date.now() - cached.timestamp < PEER_COUNT_CACHE_TTL) {
+      if (onUpdate) onUpdate(cached.count);
+      resolve({ peers: cached.count, infohash });
+      return;
+    }
+    
+    // Check if we already have this torrent (seeding or downloading)
+    const existing = seedingTorrents.get(infohash) || downloadingTorrents.get(infohash);
+    if (existing) {
+      const count = existing.numPeers;
+      peerCountCache.set(infohash, { count, timestamp: Date.now(), torrent: null });
+      if (onUpdate) onUpdate(count);
+      resolve({ peers: count, infohash });
+      return;
+    }
+    
+    // Check if torrent is already in client
+    const clientTorrent = wt.get(infohash);
+    if (clientTorrent) {
+      const count = clientTorrent.numPeers;
+      peerCountCache.set(infohash, { count, timestamp: Date.now(), torrent: null });
+      if (onUpdate) onUpdate(count);
+      resolve({ peers: count, infohash });
+      return;
+    }
+    
+    // Build magnet URI with trackers
+    const trackerParams = TRACKERS.map(t => `&tr=${encodeURIComponent(t)}`).join("");
+    const magnetURI = `magnet:?xt=urn:btih:${infohash}${trackerParams}`;
+    
+    // Add torrent just to get peer count (we'll keep it for potential download)
+    let torrent;
+    try {
+      torrent = wt.add(magnetURI, {
+        announce: TRACKERS,
+      });
+    } catch (err) {
+      console.error("Failed to add torrent for peer count:", err);
+      resolve({ peers: 0, infohash });
+      return;
+    }
+    
+    let resolved = false;
+    let lastCount = 0;
+    
+    // Update peer count as peers connect
+    const updatePeerCount = () => {
+      const count = torrent.numPeers;
+      if (count !== lastCount) {
+        lastCount = count;
+        peerCountCache.set(infohash, { count, timestamp: Date.now(), torrent });
+        if (onUpdate) onUpdate(count);
+      }
+    };
+    
+    torrent.on("wire", () => {
+      updatePeerCount();
+      if (!resolved) {
+        resolved = true;
+        resolve({ peers: torrent.numPeers, infohash });
+      }
+    });
+    
+    // Periodically check peer count
+    const interval = setInterval(() => {
+      if (torrent.destroyed) {
+        clearInterval(interval);
+        return;
+      }
+      updatePeerCount();
+    }, 2000);
+    
+    // Resolve after a timeout even if no peers found
+    setTimeout(() => {
+      clearInterval(interval);
+      if (!resolved) {
+        resolved = true;
+        peerCountCache.set(infohash, { count: torrent.numPeers, timestamp: Date.now(), torrent });
+        resolve({ peers: torrent.numPeers, infohash });
+      }
+    }, 10000); // 10 second timeout for initial peer discovery
+  });
+}
+
+/**
+ * Subscribe to peer count updates for a torrent
+ * Returns an unsubscribe function
+ */
+export function subscribeToPeerCount(torrentId, onUpdate) {
+  const infohash = extractInfohash(torrentId);
+  let active = true;
+  
+  // Start peer discovery
+  getPeerCount(torrentId, (count) => {
+    if (active) onUpdate(count);
+  });
+  
+  // Set up periodic updates
+  const interval = setInterval(() => {
+    if (!active) {
+      clearInterval(interval);
+      return;
+    }
+    
+    const wt = getClient();
+    const torrent = wt.get(infohash) || seedingTorrents.get(infohash) || downloadingTorrents.get(infohash);
+    if (torrent) {
+      onUpdate(torrent.numPeers);
+    }
+  }, 5000);
+  
+  // Return unsubscribe function
+  return () => {
+    active = false;
+    clearInterval(interval);
+  };
+}

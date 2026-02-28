@@ -1458,6 +1458,25 @@ main {
   gap: 4px;
 }
 
+.file-card__peers--available {
+  color: #4ade80;
+}
+
+.file-card__peers--none {
+  color: #f87171;
+}
+
+.peer-count-loading {
+  display: inline-block;
+  min-width: 20px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 .file-card__progress {
   margin-top: 10px;
 }
