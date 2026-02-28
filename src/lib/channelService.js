@@ -355,6 +355,15 @@ export async function getCategories() {
   }
 }
 
+// Local categories cache for immediate UI updates
+let localCategoriesCache = null;
+let categoriesListeners = [];
+
+function notifyCategoriesListeners(categories) {
+  localCategoriesCache = categories;
+  categoriesListeners.forEach(cb => cb(categories));
+}
+
 export async function createCategory(id, name, icon = "folder") {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
@@ -378,6 +387,9 @@ export async function createCategory(id, name, icon = "folder") {
   
   const updated = { ...existing, [id]: category };
   await db.putData(getCategoriesKey(), updated);
+  
+  // Immediately notify listeners for instant UI update
+  notifyCategoriesListeners(updated);
   
   return category;
 }
@@ -417,6 +429,10 @@ export async function deleteCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
+  
+  // Immediately notify listeners for instant UI update
+  notifyCategoriesListeners(updated);
+  
   return updated;
 }
 
@@ -450,6 +466,10 @@ export async function restoreCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
+  
+  // Immediately notify listeners for instant UI update
+  notifyCategoriesListeners(updated);
+  
   return updated;
 }
 
@@ -485,11 +505,23 @@ export function subscribeToCategories(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
+  // Add to local listeners for immediate updates on local writes
+  categoriesListeners.push(callback);
+  
+  // If we have cached data, call immediately
+  if (localCategoriesCache) {
+    callback(localCategoriesCache);
+  }
+  
   const key = getCategoriesKey();
   db.subscribeData(key);
   db.addKeyListener(key, (msg) => {
-    callback(msg.v || {});
+    const categories = msg.v || {};
+    localCategoriesCache = categories;
+    callback(categories);
   });
   
-  return () => {};
+  return () => {
+    categoriesListeners = categoriesListeners.filter(cb => cb !== callback);
+  };
 }
