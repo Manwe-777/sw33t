@@ -1,4 +1,4 @@
-import { getToolDb, getChannelKey } from "./tooldb";
+import { getToolDb, getChannelKey, getChannelMetaKey } from "./tooldb";
 import { 
   PERMISSIONS, 
   ALL_PERMISSIONS, 
@@ -6,9 +6,6 @@ import {
   hasPermission as checkPermission,
   permissionsToString,
 } from "./permissions";
-
-// Channel meta uses frozen namespace (==) which is already unique per content
-const CHANNEL_META_KEY = "==channel-meta";
 
 // Categories need to be namespaced by channel
 function getCategoriesKey() {
@@ -30,7 +27,7 @@ export async function getChannelMeta() {
   if (!db) return null;
   
   try {
-    const meta = await db.getData(CHANNEL_META_KEY);
+    const meta = await db.getData(getChannelMetaKey());
     return meta || null;
   } catch (err) {
     console.error("Failed to get channel meta:", err);
@@ -45,7 +42,7 @@ export async function waitForChannelSync(timeoutMs = 3000) {
   return new Promise((resolve) => {
     let resolved = false;
     
-    db.subscribeData(CHANNEL_META_KEY);
+    db.subscribeData(getChannelMetaKey());
     
     const listener = (msg) => {
       if (!resolved && msg.v) {
@@ -55,9 +52,9 @@ export async function waitForChannelSync(timeoutMs = 3000) {
       }
     };
     
-    db.addKeyListener(CHANNEL_META_KEY, listener);
+    db.addKeyListener(getChannelMetaKey(), listener);
     
-    db.getData(CHANNEL_META_KEY).then((existing) => {
+    db.getData(getChannelMetaKey()).then((existing) => {
       if (!resolved && existing) {
         resolved = true;
         currentChannelMeta = existing;
@@ -90,7 +87,7 @@ export async function initializeChannel(channelId, userAddress, username) {
     const wasArray = Array.isArray(existingMeta.admins);
     if (wasArray && existingMeta.creator === userAddress) {
       console.log("Persisting migrated admin format to database...");
-      await db.putData(CHANNEL_META_KEY, migratedMeta);
+      await db.putData(getChannelMetaKey(), migratedMeta);
     }
     
     currentChannelMeta = migratedMeta;
@@ -110,7 +107,7 @@ export async function initializeChannel(channelId, userAddress, username) {
     blocklist: [],
   };
   
-  await db.putData(CHANNEL_META_KEY, meta);
+  await db.putData(getChannelMetaKey(), meta);
   currentChannelMeta = meta;
   console.log("Channel initialized, user is creator with all permissions:", userAddress);
   return meta;
@@ -198,7 +195,7 @@ export async function updateChannelMeta(updates) {
   }
   
   const newMeta = { ...migrateAdminsFormat(existingMeta), ...updates };
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -228,7 +225,7 @@ export async function promoteToAdmin(targetAddress, permissions = DEFAULT_ADMIN_
     },
   };
   
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -266,7 +263,7 @@ export async function updateAdminPermissions(targetAddress, permissions) {
     },
   };
   
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -293,7 +290,7 @@ export async function demoteAdmin(targetAddress) {
     admins: remainingAdmins,
   };
   
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -318,7 +315,7 @@ export async function addToBlocklist(targetAddress) {
     blocklist: [...(meta.blocklist || []), targetAddress],
   };
   
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -339,7 +336,7 @@ export async function removeFromBlocklist(targetAddress) {
     blocklist: (meta.blocklist || []).filter(a => a !== targetAddress),
   };
   
-  await db.putData(CHANNEL_META_KEY, newMeta);
+  await db.putData(getChannelMetaKey(), newMeta);
   currentChannelMeta = newMeta;
   return newMeta;
 }
@@ -467,7 +464,7 @@ export function subscribeToChannelMeta(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
-  db.subscribeData(CHANNEL_META_KEY);
+  db.subscribeData(getChannelMetaKey());
   
   const listener = (msg) => {
     if (msg.v) {
@@ -476,7 +473,7 @@ export function subscribeToChannelMeta(callback) {
     }
   };
   
-  db.addKeyListener(CHANNEL_META_KEY, listener);
+  db.addKeyListener(getChannelMetaKey(), listener);
   channelMetaListeners.push(listener);
   
   return () => {

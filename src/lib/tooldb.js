@@ -11,9 +11,17 @@ const ToolDbEcdsaUser = ecdsaUser.default || ecdsaUser;
 
 let db = null;
 let currentTopic = null;
+let currentChannelId = null;
 let channelMetaCache = null;
 
-const CHANNEL_META_KEY = "==channel-meta";
+/**
+ * Get the channel meta key (frozen namespace, namespaced by channel)
+ * Format: ==ch:{channelId}:meta
+ */
+export function getChannelMetaKey() {
+  if (!currentChannelId) return "==channel-meta";
+  return `==ch:${currentChannelId}:meta`;
+}
 
 /**
  * Get or create a ToolDB instance for a channel
@@ -32,9 +40,11 @@ export function connectToChannel(channelId) {
   if (db) {
     // ToolDB doesn't have a close method, but we can replace the instance
     db = null;
+    channelMetaCache = null;
   }
   
   currentTopic = topic;
+  currentChannelId = channelId;
   
   db = new ToolDb({
     peers: [],
@@ -46,8 +56,10 @@ export function connectToChannel(channelId) {
   });
   
   // Subscribe to channel meta for permission verification
-  db.subscribeData(CHANNEL_META_KEY);
-  db.addKeyListener(CHANNEL_META_KEY, (msg) => {
+  const metaKey = getChannelMetaKey();
+  console.log("Subscribing to channel meta key:", metaKey);
+  db.subscribeData(metaKey);
+  db.addKeyListener(metaKey, (msg) => {
     if (msg.v) {
       channelMetaCache = migrateAdminsFormat(msg.v);
       console.log("Channel meta cached for verification:", channelMetaCache);
