@@ -66,6 +66,20 @@ export function connectToChannel(channelId) {
     }
   });
   
+  // Listen for frozen namespace conflict resolution
+  // This happens when another peer had an older (winning) channel meta
+  db.on("username-conflict-resolved", (event) => {
+    if (event.username === metaKey) {
+      console.log("Channel meta conflict resolved, re-fetching...");
+      db.getData(metaKey).then((data) => {
+        if (data) {
+          channelMetaCache = migrateAdminsFormat(data);
+          console.log("Channel meta updated after conflict:", channelMetaCache);
+        }
+      });
+    }
+  });
+  
   // Add custom verificators for permission enforcement
   setupVerificators(db);
   

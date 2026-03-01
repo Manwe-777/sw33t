@@ -94,6 +94,7 @@ npm start -- --channels gaming,movies,music --port 8080
 | `PORT` | Base port for WebSocket server | 8080 |
 | `DATA_DIR` | Data persistence directory | /data |
 | `DEBUG` | Enable verbose logging | false |
+| `SYNC_INTERVAL` | Full sync interval in milliseconds | 30000 |
 
 ### CLI Arguments
 
@@ -125,7 +126,8 @@ npm start -- --channels gaming,movies,music --port 8080
 1. **Peer Discovery** - Connects to WebTorrent trackers + Nostr relays
 2. **WebRTC Connections** - Establishes P2P connections with browsers
 3. **Data Sync** - Receives and stores all channel data via CRDTs
-4. **Persistence** - LevelDB keeps data across restarts
+4. **Active Sync** - Periodically queries peers for all keys and fetches missing data
+5. **Persistence** - LevelDB keeps data across restarts
 
 Browser peers discover the relay automatically through the same mechanisms they use to find each other. No special configuration needed in the browser app.
 

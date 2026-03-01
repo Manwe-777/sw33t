@@ -50,7 +50,7 @@ export async function getChannelMeta() {
   }
 }
 
-export async function waitForChannelSync(timeoutMs = 3000) {
+export async function waitForChannelSync(timeoutMs = 5000) {
   const db = getToolDb();
   if (!db) return null;
 
@@ -69,13 +69,29 @@ export async function waitForChannelSync(timeoutMs = 3000) {
     
     db.addKeyListener(getChannelMetaKey(), listener);
     
-    db.getData(getChannelMetaKey()).then((existing) => {
-      if (!resolved && existing) {
-        resolved = true;
-        currentChannelMeta = existing;
-        resolve(existing);
+    // Try multiple times with increasing delays to handle slow peer connections
+    const tryGetData = async (attempt = 1) => {
+      if (resolved) return;
+      
+      try {
+        const existing = await db.getData(getChannelMetaKey(), false, 2000);
+        if (!resolved && existing) {
+          resolved = true;
+          currentChannelMeta = existing;
+          resolve(existing);
+          return;
+        }
+      } catch (e) {
+        // Ignore errors, will retry
       }
-    });
+      
+      // Retry up to 3 times with 1 second delay
+      if (attempt < 3 && !resolved) {
+        setTimeout(() => tryGetData(attempt + 1), 1000);
+      }
+    };
+    
+    tryGetData();
     
     setTimeout(() => {
       if (!resolved) {
@@ -91,7 +107,8 @@ export async function initializeChannel(channelId, userAddress, username) {
   if (!db) throw new Error("Not connected");
   
   console.log("Waiting for channel sync...");
-  const existingMeta = await waitForChannelSync(2000);
+  // Wait longer for channel sync to allow peer discovery
+  const existingMeta = await waitForChannelSync(5000);
   
   if (existingMeta) {
     // Migrate old array-based admins to object-based if needed
@@ -526,9 +543,51 @@ export function subscribeToChannelMeta(callback) {
   db.addKeyListener(getChannelMetaKey(), listener);
   channelMetaListeners.push(listener);
   
+  // Listen for frozen namespace conflict resolution
+  // This happens when another peer had an older (winning) channel meta
+  const metaKey = getChannelMetaKey();
+  const conflictListener = (event) => {
+    if (event.username === metaKey) {
+      console.log("Channel meta conflict resolved:", event);
+      // Re-fetch the winning data and update UI
+      db.getData(metaKey).then((data) => {
+        if (data) {
+          currentChannelMeta = data;
+          callback(data);
+        }
+      });
+    }
+  };
+  
+  db.on("username-conflict-resolved", conflictListener);
+  
+  // Also listen for when current user loses their channel ownership
+  const lostListener = (event) => {
+    if (event.username === metaKey.replace("==", "")) {
+      console.log("Current user lost channel ownership:", event);
+      // Re-fetch the winning data
+      db.getData(metaKey).then((data) => {
+        if (data) {
+          currentChannelMeta = data;
+          callback(data);
+        }
+      });
+    }
+  };
+  
+  db.on("current-user-lost-username", lostListener);
+  
   return () => {
     channelMetaListeners = channelMetaListeners.filter(l => l !== listener);
     localMetaListeners = localMetaListeners.filter(cb => cb !== callback);
+    // Note: EventEmitter cleanup - these may not unsubscribe properly in browser
+    // but the listeners are lightweight and check the key
+    try {
+      db.off?.("username-conflict-resolved", conflictListener);
+      db.off?.("current-user-lost-username", lostListener);
+    } catch (e) {
+      // Ignore if off() doesn't exist
+    }
   };
 }
 

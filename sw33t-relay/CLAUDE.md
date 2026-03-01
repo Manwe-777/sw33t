@@ -82,6 +82,34 @@ The Dockerfile:
 | `PORT` | Base WebSocket port | 8080 |
 | `DATA_DIR` | LevelDB storage path | /data |
 | `DEBUG` | Verbose logging | false |
+| `SYNC_INTERVAL` | Full sync interval in ms | 30000 |
+
+## Active Sync Mechanism
+
+ToolDB is pull-based - peers don't automatically share all data on connect. The relay implements active sync to ensure it has all data:
+
+### How It Works
+
+1. **Periodic Sync** - Every `SYNC_INTERVAL` ms (default 30s):
+   - Query all keys from connected peers via `queryKeys("")`
+   - Fetch each key via `getData()` to get latest version
+   
+2. **On New Peer Connect** - Triggers sync after 2s delay
+
+3. **Auto-Subscribe** - When new keys are discovered via PUT/CRDT events, automatically subscribe to them
+
+### Why This Is Needed
+
+Without active sync:
+- Peer A (browser) has data
+- Relay B connects, doesn't have data
+- Peer C connects to both A and B
+- C might get response from B first (no data) instead of A (has data)
+
+With active sync:
+- Relay B periodically queries A for all keys
+- B fetches all data from A
+- When C connects, both A and B have the data
 
 ## Multiple Channels
 

@@ -131,6 +131,7 @@ ENVIRONMENT VARIABLES:
   PORT                      WebSocket server port
   DATA_DIR                  Data directory path
   DEBUG                     Enable debug logging (set to "true")
+  SYNC_INTERVAL             Full sync interval in ms (default: 30000)
 
 EXAMPLES:
   # Join a single channel
@@ -145,6 +146,105 @@ EXAMPLES:
   # Using environment variables (Docker)
   CHANNELS=gaming,movies PORT=8080 sw33t-relay
 `);
+}
+
+// Sync interval in milliseconds (default: 30 seconds)
+const SYNC_INTERVAL = parseInt(process.env.SYNC_INTERVAL) || 30000;
+
+/**
+ * Perform a full sync - query all keys from peers and fetch any we don't have
+ * This ensures the relay has all data from all connected peers
+ */
+async function performFullSync(db, channelId, config) {
+  const peerCount = Object.keys(db.network.clientToSend || {}).length;
+  if (peerCount === 0) {
+    return; // No peers to sync from
+  }
+
+  try {
+    // Query all keys from peers (empty prefix = all keys)
+    // Use longer timeout to allow peers to respond
+    const remoteKeys = await db.queryKeys("", false, 5000);
+    
+    if (!remoteKeys || remoteKeys.length === 0) {
+      return;
+    }
+
+    // Also query channel-specific keys
+    const channelKeys = await db.queryKeys(`ch:${channelId}:`, false, 5000);
+    const allKeys = [...new Set([...(remoteKeys || []), ...(channelKeys || [])])];
+
+    if (config.debug) {
+      console.log(`[${channelId}] Sync: Found ${allKeys.length} keys from peers`);
+    }
+
+    // Fetch each key - getData will get the latest version from any peer
+    let synced = 0;
+    for (const key of allKeys) {
+      try {
+        // getData sends a GET request to peers and stores the response
+        await db.getData(key, false, 2000);
+        synced++;
+      } catch (e) {
+        // Key might not exist on any peer, ignore
+      }
+    }
+
+    if (synced > 0 && config.debug) {
+      console.log(`[${channelId}] Sync: Fetched ${synced} keys`);
+    }
+  } catch (error) {
+    if (config.debug) {
+      console.log(`[${channelId}] Sync error:`, error.message);
+    }
+  }
+}
+
+/**
+ * Subscribe to all known key patterns for a channel
+ * This ensures we receive updates for all data types
+ */
+function subscribeToChannelData(db, channelId, config) {
+  const keyPatterns = [
+    `==ch:${channelId}:meta`,           // Channel metadata (frozen)
+    `ch:${channelId}:categories`,        // Categories CRDT
+  ];
+
+  for (const key of keyPatterns) {
+    db.subscribeData(key);
+    db.addKeyListener(key, (msg) => {
+      if (config.debug && msg.v) {
+        console.log(`[${channelId}] Data updated: ${key}`);
+      }
+    });
+  }
+
+  // Also listen for any PUT to discover new keys dynamically
+  db.on("put", (msg) => {
+    const key = msg.data?.k;
+    if (key && key.startsWith(`ch:${channelId}:`)) {
+      // Auto-subscribe to new channel keys we discover
+      if (!db.subscriptions?.includes(key)) {
+        db.subscribeData(key);
+        if (config.debug) {
+          console.log(`[${channelId}] Auto-subscribed to: ${key}`);
+        }
+      }
+    }
+  });
+
+  // Same for CRDTs
+  db.on("crdtPut", (msg) => {
+    const key = msg.data?.k;
+    if (key && key.startsWith(`ch:${channelId}:`)) {
+      if (!db.subscriptions?.includes(key)) {
+        db.subscribeData(key);
+        if (config.debug) {
+          console.log(`[${channelId}] Auto-subscribed to CRDT: ${key}`);
+        }
+      }
+    }
+  });
 }
 
 // Create a relay instance for a channel
@@ -180,24 +280,8 @@ async function createChannelRelay(channelId, config, portOffset = 0) {
   
   console.log(`[${channelId}] Relay address: ${db.userAccount.getAddress()}`);
 
-  // Subscribe to channel metadata
-  const metaKey = `==ch:${channelId}:meta`;
-  db.subscribeData(metaKey);
-  db.addKeyListener(metaKey, (msg) => {
-    if (msg.v) {
-      console.log(`[${channelId}] Channel meta received:`, msg.v.name || "unnamed");
-    }
-  });
-
-  // Subscribe to categories
-  const categoriesKey = `ch:${channelId}:categories`;
-  db.subscribeData(categoriesKey);
-  db.addKeyListener(categoriesKey, (msg) => {
-    if (msg.v) {
-      const count = Object.keys(msg.v).length;
-      console.log(`[${channelId}] Categories synced: ${count} categories`);
-    }
-  });
+  // Subscribe to channel data patterns
+  subscribeToChannelData(db, channelId, config);
 
   // Track connected peers
   let lastPeerCount = 0;
@@ -206,17 +290,35 @@ async function createChannelRelay(channelId, config, portOffset = 0) {
     if (peerCount !== lastPeerCount) {
       console.log(`[${channelId}] Connected peers: ${peerCount}`);
       lastPeerCount = peerCount;
+      
+      // Trigger sync when new peers connect
+      if (peerCount > lastPeerCount) {
+        setTimeout(() => {
+          performFullSync(db, channelId, config);
+        }, 2000); // Wait 2s for connection to stabilize
+      }
     }
   }, 5000);
+
+  // Periodic full sync to catch any missed data
+  setInterval(() => {
+    performFullSync(db, channelId, config);
+  }, SYNC_INTERVAL);
+
+  // Initial sync after a short delay (let connections establish)
+  setTimeout(() => {
+    console.log(`[${channelId}] Running initial sync...`);
+    performFullSync(db, channelId, config);
+  }, 10000);
 
   // Log received data for debugging
   if (config.debug) {
     db.on("put", (msg) => {
-      console.log(`[${channelId}] Data received: ${msg.k}`);
+      console.log(`[${channelId}] Data received: ${msg.data?.k || msg.k}`);
     });
 
     db.on("crdtPut", (msg) => {
-      console.log(`[${channelId}] CRDT received: ${msg.k}`);
+      console.log(`[${channelId}] CRDT received: ${msg.data?.k || msg.k}`);
     });
   }
 
