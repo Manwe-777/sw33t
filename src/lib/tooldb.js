@@ -287,6 +287,12 @@ function channelKeyVerificator(msg, previousData) {
     } else if (key.includes("_blocklist")) {
       // File blocklist: ch:{channelId}:{categoryId}_blocklist
       resolve(await blocklistVerificatorLogic(msg, previousData));
+    } else if (key.includes("comments_")) {
+      // Comments: ch:{channelId}:comments_{fileId}
+      resolve(await commentsVerificatorLogic(msg, previousData));
+    } else if (key.includes("upvotes_")) {
+      // Upvotes: ch:{channelId}:upvotes_{fileId}
+      resolve(await upvotesVerificatorLogic(msg, previousData));
     } else {
       // Unknown key type, allow by default
       console.log("Unknown channel key type, allowing:", key);
@@ -309,6 +315,111 @@ async function blocklistVerificatorLogic(msg, previousData) {
     console.warn("Blocklist write REJECTED - no BLOCK_FILES permission:", writerAddress);
     return false;
   }
+}
+
+/**
+ * Logic for comments - owner-edit only, no deletes, length limits
+ * 
+ * Comment key format: {userAddress}_{timestamp}
+ * Rules:
+ * - Anyone can add new comments (key starts with their own address)
+ * - Users can only edit their own comments (key must start with writer's address)
+ * - No deletes allowed (handled by checking if values are being removed)
+ * - Comment text must be between 1 and 500 characters
+ */
+const COMMENT_MAX_LENGTH = 500;
+const COMMENT_MIN_LENGTH = 1;
+
+async function commentsVerificatorLogic(msg, previousData) {
+  const writerAddress = msg.a;
+  const newValue = msg.v || {};
+  const oldValue = previousData?.v || {};
+  
+  // Check each entry in the new value
+  for (const [commentKey, commentData] of Object.entries(newValue)) {
+    // Check if this is a new or modified comment
+    const isNew = !(commentKey in oldValue);
+    const isModified = !isNew && JSON.stringify(oldValue[commentKey]) !== JSON.stringify(commentData);
+    
+    if (isNew || isModified) {
+      // Comment key must start with the writer's address
+      // This ensures users can only add/edit their own comments
+      if (!commentKey.startsWith(writerAddress)) {
+        console.warn("Comment write REJECTED - key doesn't match author:", commentKey, writerAddress);
+        return false;
+      }
+      
+      // Validate comment text length
+      const text = commentData?.text;
+      if (typeof text !== "string") {
+        console.warn("Comment write REJECTED - text is not a string:", commentKey);
+        return false;
+      }
+      
+      const textLength = text.trim().length;
+      if (textLength < COMMENT_MIN_LENGTH) {
+        console.warn("Comment write REJECTED - text too short:", textLength, "chars");
+        return false;
+      }
+      
+      if (textLength > COMMENT_MAX_LENGTH) {
+        console.warn("Comment write REJECTED - text too long:", textLength, "chars (max", COMMENT_MAX_LENGTH, ")");
+        return false;
+      }
+    }
+  }
+  
+  // Check for deletions - reject if any old keys are missing from new value
+  // (We're write-only, no deletions allowed)
+  for (const oldKey of Object.keys(oldValue)) {
+    if (!(oldKey in newValue)) {
+      console.warn("Comment write REJECTED - deletion not allowed:", oldKey);
+      return false;
+    }
+  }
+  
+  console.log("Comments write allowed for:", writerAddress);
+  return true;
+}
+
+/**
+ * Logic for upvotes - users can only modify their own upvote entry
+ * 
+ * Upvote data format: { [userAddress]: boolean }
+ * Rules:
+ * - Users can only add/modify the entry keyed by their own address
+ * - Users cannot modify other users' upvote entries
+ */
+async function upvotesVerificatorLogic(msg, previousData) {
+  const writerAddress = msg.a;
+  const newValue = msg.v || {};
+  const oldValue = previousData?.v || {};
+  
+  // Check each entry in the new value
+  for (const [userAddress, vote] of Object.entries(newValue)) {
+    const oldVote = oldValue[userAddress];
+    const isModified = oldVote !== vote;
+    
+    if (isModified) {
+      // Only the owner of this upvote entry can modify it
+      if (userAddress !== writerAddress) {
+        console.warn("Upvote write REJECTED - cannot modify another user's vote:", userAddress, "by", writerAddress);
+        return false;
+      }
+    }
+  }
+  
+  // Check for deletions - reject if any old keys are missing
+  // (Users cannot remove other users' upvotes from the data)
+  for (const oldKey of Object.keys(oldValue)) {
+    if (!(oldKey in newValue)) {
+      console.warn("Upvote write REJECTED - deletion not allowed:", oldKey);
+      return false;
+    }
+  }
+  
+  console.log("Upvotes write allowed for:", writerAddress);
+  return true;
 }
 
 /**

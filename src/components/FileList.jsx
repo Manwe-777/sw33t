@@ -11,7 +11,6 @@ import {
 } from "../lib/fileService";
 import { 
   downloadTorrent, 
-  getTorrentStatus, 
   isSeeding,
   formatBytes,
   formatSpeed,
@@ -21,9 +20,11 @@ import { useAuth } from "../context/AuthContext";
 import { UserAvatar } from "./Avatar";
 import { 
   Link2, Magnet, Package, ExternalLink, Clock, Copy, Check, Trash2,
-  Upload, Download, Users, HardDrive, X, Pencil, Image,
+  Upload, Download, Users, HardDrive, X, Pencil, Image, MessageSquare,
 } from "lucide-react";
 import IconButton from "./IconButton";
+import UpvoteButton from "./UpvoteButton";
+import CommentSection from "./CommentSection";
 
 const MAX_IMAGE_SIZE = 100 * 1024; // 100KB max for base64 images
 const MAX_IMAGE_DIMENSION = 400;
@@ -278,7 +279,6 @@ function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   
   const timeAgo = getTimeAgo(file.createdAt);
   const seeding = isSeeding(file.link);
-  const status = getTorrentStatus(file.link);
   
   // Subscribe to peer count updates
   useEffect(() => {
@@ -651,6 +651,19 @@ function getTimeAgo(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
 
+// Wrapper component that adds upvote button and comments to any file card
+function FileCardWithInteractions({ file, children }) {
+  return (
+    <div className="file-card-wrapper">
+      {children}
+      <div className="file-card-interactions">
+        <UpvoteButton fileId={file.id} compact />
+        <CommentSection fileId={file.id} />
+      </div>
+    </div>
+  );
+}
+
 function FileList({ categoryId, onAddFile, canBlockFiles }) {
   const { isAuthenticated, user } = useAuth();
   const [files, setFiles] = useState({});
@@ -742,25 +755,25 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
     <>
       <div className="file-list">
         {fileList.map((file) => (
-          file.linkType === "torrent" ? (
-            <TorrentFileCard
-              key={file.id}
-              file={file}
-              canDelete={canBlockFiles}
-              onDelete={handleBlockFile}
-              canEdit={user?.address === file.uploader}
-              onEdit={() => setEditingFile(file)}
-            />
-          ) : (
-            <FileCard 
-              key={file.id} 
-              file={file} 
-              canDelete={canBlockFiles}
-              onDelete={handleBlockFile}
-              canEdit={user?.address === file.uploader}
-              onEdit={() => setEditingFile(file)}
-            />
-          )
+          <FileCardWithInteractions key={file.id} file={file}>
+            {file.linkType === "torrent" ? (
+              <TorrentFileCard
+                file={file}
+                canDelete={canBlockFiles}
+                onDelete={handleBlockFile}
+                canEdit={user?.address === file.uploader}
+                onEdit={() => setEditingFile(file)}
+              />
+            ) : (
+              <FileCard 
+                file={file} 
+                canDelete={canBlockFiles}
+                onDelete={handleBlockFile}
+                canEdit={user?.address === file.uploader}
+                onEdit={() => setEditingFile(file)}
+              />
+            )}
+          </FileCardWithInteractions>
         ))}
       </div>
       

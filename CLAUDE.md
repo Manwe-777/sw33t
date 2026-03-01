@@ -294,10 +294,10 @@ interface CommentData {
 - [x] Copy link and open link actions
 - [x] Admin file blocklist (soft delete via `{categoryId}_blocklist`)
 
-### Phase 5: Comments & Upvotes
-- [ ] Comments with owner-edit verificator
-- [ ] Upvotes (one per user)
-- [ ] UI for commenting and voting
+### Phase 5: Comments & Upvotes (Complete)
+- [x] Comments with owner-edit verificator
+- [x] Upvotes (one per user)
+- [x] UI for commenting and voting
 
 ## Key Files to Reference
 
@@ -316,6 +316,8 @@ interface CommentData {
 - `src/lib/permissions.js` - Bitwise permission system constants and helpers
 - `src/lib/userService.js` - User profile storage and lookup via ToolDB
 - `src/lib/torrentService.js` - WebTorrent client for P2P file sharing
+- `src/lib/commentService.js` - Comment CRUD operations per file
+- `src/lib/upvoteService.js` - Upvote toggle and count per file
 - `src/hooks/useProfile.js` - React hook for fetching user profiles
 - `src/context/AuthContext.jsx` - Authentication context provider
 - `src/components/HomePage.jsx` - Channel join form
@@ -325,6 +327,8 @@ interface CommentData {
 - `src/components/CategoryList.jsx` - Category sidebar with create form
 - `src/components/FileList.jsx` - File listing in a category (supports torrent downloads)
 - `src/components/AddFileModal.jsx` - Form to share links or upload files via WebTorrent
+- `src/components/CommentSection.jsx` - Expandable comment thread for files
+- `src/components/UpvoteButton.jsx` - Upvote button with count
 - `src/components/PermissionEditor.jsx` - UI for editing admin permissions
 - `src/components/AdminItem.jsx` - Admin list item with profile lookup
 - `src/App.jsx` - Router configuration
