@@ -519,3 +519,73 @@ const filterBlockedMessages = (data: any[], blocklist: string[]) => {
 import { sha1 } from "tool-db";  // Or use crypto.randomUUID()
 const id = sha1(name + Date.now() + userAddress);
 ```
+
+## Sw33t Relay Server
+
+The relay server (`sw33t-relay/`) is a self-hosted Node.js application that acts as an always-on peer for Sw33t channels. It solves the availability problem: when all browser users leave a channel, data persists only in their IndexedDB. New users joining get no data until an original peer returns.
+
+### What the Relay Does
+
+1. **Joins channels via WebRTC** - Uses the same `@tool-db/webrtc-network` adapter as browsers
+2. **Discovers peers** - Connects to WebTorrent trackers + Nostr relays for peer discovery
+3. **Persists data** - Stores all synced data in LevelDB (survives restarts)
+4. **Relays data** - Acts as a bridge between peers, ensuring data propagates
+5. **Runs 24/7** - Keeps channel data available even when all browsers close
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     SW33T RELAY                              │
+│  ┌───────────┐   ┌───────────┐   ┌───────────┐             │
+│  │  WebRTC   │   │  LevelDB  │   │ WebSocket │             │
+│  │  (P2P)    │   │  Storage  │   │  Server   │             │
+│  └─────┬─────┘   └───────────┘   └─────┬─────┘             │
+└────────│───────────────────────────────│────────────────────┘
+         │                               │
+    ┌────┴────┐                    ┌─────┴─────┐
+    │ Browser │←───── WebRTC ─────→│  Browser  │
+    │  Peer   │                    │   Peer    │
+    └─────────┘                    └───────────┘
+```
+
+### Running the Relay
+
+```bash
+# Docker (recommended)
+docker build -t sw33t-relay ./sw33t-relay
+docker run -d --name sw33t-relay \
+  -p 8080:8080 \
+  -e CHANNELS=your-channel \
+  -v sw33t-data:/data \
+  sw33t-relay
+
+# Node.js (local development)
+cd sw33t-relay
+npm install
+npm start -- --channel your-channel
+```
+
+### Configuration
+
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `CHANNELS` | Comma-separated list of channels | Required |
+| `PORT` | WebSocket server port | 8080 |
+| `DATA_DIR` | Data persistence directory | /data |
+| `DEBUG` | Enable verbose logging | false |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `sw33t-relay/src/index.js` | Main entry point, CLI argument parsing, relay setup |
+| `sw33t-relay/Dockerfile` | Docker image with wrtc support |
+| `sw33t-relay/docker-compose.yml` | Easy deployment configuration |
+| `sw33t-relay/package.json` | Dependencies (tool-db, webrtc-network, wrtc, leveldb-store) |
+
+### Known Issues
+
+1. **ICE gathering timeout** - Normal when creating WebRTC offers that don't get answered (no other peers). Not fatal.
+2. **Tracker errors** - Some WebTorrent trackers may be down. Relay retries with exponential backoff.
+3. **RTCDataChannel not open** - Race condition in webrtc-network when sending to a closing channel. Handled with global error handlers - logged but doesn't crash. Root fix needed in `@tool-db/webrtc-network` (check `peer.connected` before sending).

@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  sw33t-relay:
+    build: .
+    container_name: sw33t-relay
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      # Add more ports if running multiple channels
+      # - "8081:8081"
+      # - "8082:8082"
+    environment:
+      # Comma-separated list of channels to relay
+      - CHANNELS=test
+      - PORT=8080
+      - DATA_DIR=/data
+      - DEBUG=false
+    volumes:
+      # Persist data across restarts
+      - sw33t-data:/data
+    # Uncomment for better networking (host mode allows direct P2P)
+    # network_mode: host
+
+volumes:
+  sw33t-data:
+    driver: local
