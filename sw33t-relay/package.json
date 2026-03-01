@@ -22,7 +22,7 @@
   "author": "Manwe",
   "license": "Apache-2.0",
   "dependencies": {
-    "tool-db": "^2.6.3",
+    "tool-db": "^2.6.6",
     "@tool-db/webrtc-network": "^1.1.3",
     "@tool-db/leveldb-store": "^1.1.3",
     "@tool-db/ecdsa-user": "^1.1.3",

@@ -95,17 +95,53 @@ function getCombinedChannelData() {
 // Build simple admins object { address: permissions } for backwards compatibility
 function buildAdminsObject() {
   const admins = {};
+  const creatorAddress = ownershipCache?.creator;
   
-  // Creator always has all permissions
-  if (ownershipCache?.creator) {
-    admins[ownershipCache.creator] = ALL_PERMISSIONS;
+  // Creator always has all permissions (from frozen ownership, not from admins key)
+  if (creatorAddress) {
+    admins[creatorAddress] = ALL_PERMISSIONS;
   }
   
-  // Add other admins
-  if (adminsCache) {
+  // Add other admins, but ONLY if they were legitimately promoted
+  // A legitimate promotion is one where:
+  // 1. The promoter is the creator, OR
+  // 2. The promoter is already a valid admin with PROMOTE_ADMINS permission
+  if (adminsCache && creatorAddress) {
+    // First pass: collect all addresses that were promoted by the creator
+    const validAdmins = new Set([creatorAddress]);
+    
+    // Keep iterating until no new valid admins are found
+    // (handles chains: creator -> admin1 -> admin2)
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [address, data] of Object.entries(adminsCache)) {
+        if (validAdmins.has(address)) continue; // Already valid
+        if (!data.promotedBy) continue; // No promoter info
+        
+        // Check if promoter is valid AND has PROMOTE_ADMINS permission
+        if (validAdmins.has(data.promotedBy)) {
+          // Get promoter's permissions at the time of promotion
+          const promoterData = adminsCache[data.promotedBy];
+          const promoterPerms = data.promotedBy === creatorAddress 
+            ? ALL_PERMISSIONS 
+            : (promoterData?.permissions || 0);
+          
+          if (checkPermission(promoterPerms, PERMISSIONS.PROMOTE_ADMINS)) {
+            validAdmins.add(address);
+            changed = true;
+          }
+        }
+      }
+    }
+    
+    // Now add only valid admins (excluding creator who's already added)
     for (const [address, data] of Object.entries(adminsCache)) {
-      if (address !== ownershipCache?.creator) {
+      if (address === creatorAddress) continue; // Creator handled above
+      if (validAdmins.has(address)) {
         admins[address] = data.permissions || 0;
+      } else {
+        console.log("Filtering out invalid admin (not legitimately promoted):", address);
       }
     }
   }
@@ -241,14 +277,10 @@ export async function initializeChannel(channelId, userAddress, username) {
   await db.putData(getMetaKey(), settings);
   settingsCache = settings;
   
-  // 3. Create initial admins (creator with full permissions and audit trail)
-  const admins = {
-    [userAddress]: {
-      permissions: ALL_PERMISSIONS,
-      promotedBy: userAddress,  // Self (creator)
-      promotedAt: now,
-    },
-  };
+  // 3. Initialize empty admins (creator is NOT stored here - they get permissions from ownership)
+  // The creator always has ALL_PERMISSIONS by virtue of being in the frozen ==ch:{id}:owner key
+  // The ch:{id}:admins key is ONLY for additional promoted admins
+  const admins = {};
   await db.putData(getAdminsKey(), admins);
   adminsCache = admins;
   
