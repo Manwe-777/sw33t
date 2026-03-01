@@ -524,6 +524,17 @@ const id = sha1(name + Date.now() + userAddress);
 
 The relay server (`sw33t-relay/`) is a self-hosted Node.js application that acts as an always-on peer for Sw33t channels. It solves the availability problem: when all browser users leave a channel, data persists only in their IndexedDB. New users joining get no data until an original peer returns.
 
+### Censorship Resistance
+
+The architecture provides strong censorship resistance:
+
+- **No central server** - Data flows peer-to-peer, no single point to block
+- **Multiple discovery mechanisms** - WebTorrent trackers + Nostr relays provide redundancy
+- **No fixed IP required** - Relays are discovered via trackers/Nostr, not direct IP addresses
+- **Easy migration** - Move relay to new host anytime, peers find it automatically
+- **Data replication** - Every synced peer has a copy, blocking one doesn't delete data
+- **Browser access** - Users connect via WebRTC, no specific domain/IP to block
+
 ### What the Relay Does
 
 1. **Joins channels via WebRTC** - Uses the same `@tool-db/webrtc-network` adapter as browsers

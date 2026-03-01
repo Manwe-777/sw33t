@@ -11,6 +11,37 @@ A relay solves this by:
 - **Persisting data** - Stores everything in LevelDB (survives restarts)
 - **Using the same protocol** - Connects via WebRTC like any browser peer
 
+## Censorship Resistance
+
+The Sw33t network is designed to be resilient against censorship and blocking:
+
+### No Central Server to Block
+- There is no central server - data flows directly between peers
+- Blocking any single IP doesn't affect the network
+- The relay is just another peer, not a required component
+
+### Multiple Discovery Mechanisms
+Peers find each other through redundant channels:
+- **WebTorrent Trackers** - Multiple public trackers worldwide
+- **Nostr Relays** - Decentralized relay network for signaling
+- If some are blocked, others still work
+
+### Relay Flexibility
+- **Run anywhere** - VPS, home server, cloud, Raspberry Pi
+- **No fixed IP required** - Peers discover via trackers/Nostr, not direct IP
+- **Easy to migrate** - Move to a new host anytime, peers find you automatically
+- **Multiple relays** - Anyone can run a relay, no single point of failure
+
+### Browser Access
+- Users access via WebRTC which uses encrypted peer-to-peer connections
+- No specific domain or IP to block - peers connect directly
+- Works from any browser without special software
+
+### Data Replication
+- Data exists on every peer that syncs it
+- Blocking one peer doesn't delete the data
+- New relays can resync from any existing peer
+
 ## Quick Start
 
 ### Docker (Recommended)
