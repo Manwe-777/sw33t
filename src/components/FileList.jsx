@@ -14,13 +14,13 @@ import {
   isSeeding,
   formatBytes,
   formatSpeed,
-  subscribeToPeerCount,
 } from "../lib/torrentService";
 import { useAuth } from "../context/AuthContext";
+import { useProfile } from "../hooks/useProfile";
 import { UserAvatar } from "./Avatar";
 import { 
   Link2, Magnet, ExternalLink, Clock, Copy, Check, Trash2,
-  Upload, Download, Users, HardDrive, X, Pencil, Image, MessageSquare,
+  Upload, Download, HardDrive, X, Pencil, Image, MessageSquare, Search,
 } from "lucide-react";
 import IconButton from "./IconButton";
 import UpvoteButton from "./UpvoteButton";
@@ -28,6 +28,35 @@ import CommentSection from "./CommentSection";
 
 const MAX_IMAGE_SIZE = 100 * 1024; // 100KB max for base64 images
 const MAX_IMAGE_DIMENSION = 400;
+
+// Format address with beginning and end visible
+function formatAddress(address, startChars = 6, endChars = 4) {
+  if (!address) return "Unknown";
+  if (address.length <= startChars + endChars + 3) return address;
+  return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;
+}
+
+// Component to display uploader info with profile lookup
+function UploaderInfo({ address }) {
+  const { profile } = useProfile(address);
+  const formattedAddr = formatAddress(address);
+  
+  return (
+    <span className="file-card__uploader">
+      <UserAvatar 
+        address={address} 
+        name={profile?.username}
+        src={profile?.avatar}
+        size={16} 
+      />
+      {profile?.username ? (
+        <span>{profile.username} / {formattedAddr}</span>
+      ) : (
+        <span>{formattedAddr}</span>
+      )}
+    </span>
+  );
+}
 
 function getLinkIcon(linkType) {
   switch (linkType) {
@@ -273,18 +302,9 @@ function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   const [downloadState, setDownloadState] = useState(null); // null | "downloading" | "complete"
   const [progress, setProgress] = useState(null);
   const [downloadedFile, setDownloadedFile] = useState(null); // { url, name }
-  const [peerCount, setPeerCount] = useState(null); // null = loading, number = count
   
   const timeAgo = getTimeAgo(file.createdAt);
   const seeding = isSeeding(file.link);
-  
-  // Subscribe to peer count updates
-  useEffect(() => {
-    const unsubscribe = subscribeToPeerCount(file.link, (count) => {
-      setPeerCount(count);
-    });
-    return unsubscribe;
-  }, [file.link]);
   
   const copyLink = async () => {
     try {
@@ -399,14 +419,6 @@ function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
             <Clock size={12} />
             {timeAgo}
           </span>
-          <span className={`file-card__peers ${peerCount === 0 ? 'file-card__peers--none' : peerCount > 0 ? 'file-card__peers--available' : ''}`}>
-            <Users size={12} />
-            {peerCount === null ? (
-              <span className="peer-count-loading">...</span>
-            ) : (
-              <span>{peerCount} {peerCount === 1 ? 'seeder' : 'seeders'}</span>
-            )}
-          </span>
         </div>
         
         {downloadState === "downloading" && progress && (
@@ -506,21 +518,9 @@ function TorrentFileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
 function FileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
   const [copied, setCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [peerCount, setPeerCount] = useState(null);
   
   const formattedLink = formatLink(file.link, file.linkType);
   const timeAgo = getTimeAgo(file.createdAt);
-  const isMagnet = file.linkType === "magnet";
-  
-  // Subscribe to peer count for magnet links
-  useEffect(() => {
-    if (!isMagnet) return;
-    
-    const unsubscribe = subscribeToPeerCount(file.link, (count) => {
-      setPeerCount(count);
-    });
-    return unsubscribe;
-  }, [file.link, isMagnet]);
   
   const copyLink = async () => {
     try {
@@ -578,20 +578,7 @@ function FileCard({ file, canDelete, onDelete, canEdit, onEdit }) {
             <Clock size={12} />
             {timeAgo}
           </span>
-          <span className="file-card__uploader">
-            <UserAvatar address={file.uploader} size={16} />
-            {file.uploader?.slice(0, 6)}...
-          </span>
-          {isMagnet && (
-            <span className={`file-card__peers ${peerCount === 0 ? 'file-card__peers--none' : peerCount > 0 ? 'file-card__peers--available' : ''}`}>
-              <Users size={12} />
-              {peerCount === null ? (
-                <span className="peer-count-loading">...</span>
-              ) : (
-                <span>{peerCount} {peerCount === 1 ? 'seeder' : 'seeders'}</span>
-              )}
-            </span>
-          )}
+          <UploaderInfo address={file.uploader} />
         </div>
       </div>
       
@@ -668,6 +655,7 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
   const [blocklist, setBlocklist] = useState({});
   const [loading, setLoading] = useState(true);
   const [editingFile, setEditingFile] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!categoryId) return;
@@ -705,6 +693,14 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
 
   const fileList = Object.values(files)
     .filter((file) => !isFileBlocked(file.id, blocklist))
+    .filter((file) => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        file.name?.toLowerCase().includes(query) ||
+        file.description?.toLowerCase().includes(query)
+      );
+    })
     .sort((a, b) => b.createdAt - a.createdAt);
 
   if (loading) {
@@ -731,7 +727,9 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
     );
   }
 
-  if (fileList.length === 0) {
+  const totalFiles = Object.values(files).filter((file) => !isFileBlocked(file.id, blocklist)).length;
+
+  if (totalFiles === 0) {
     return (
       <div className="file-list__empty">
         <p>No files shared yet in this category.</p>
@@ -751,29 +749,57 @@ function FileList({ categoryId, onAddFile, canBlockFiles }) {
 
   return (
     <>
-      <div className="file-list">
-        {fileList.map((file) => (
-          <FileCardWithInteractions key={file.id} file={file}>
-            {file.linkType === "torrent" ? (
-              <TorrentFileCard
-                file={file}
-                canDelete={canBlockFiles}
-                onDelete={handleBlockFile}
-                canEdit={user?.address === file.uploader}
-                onEdit={() => setEditingFile(file)}
-              />
-            ) : (
-              <FileCard 
-                file={file} 
-                canDelete={canBlockFiles}
-                onDelete={handleBlockFile}
-                canEdit={user?.address === file.uploader}
-                onEdit={() => setEditingFile(file)}
-              />
-            )}
-          </FileCardWithInteractions>
-        ))}
+      <div className="file-list-search">
+        <Search size={16} />
+        <input
+          type="text"
+          placeholder="Search files..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button 
+            className="file-list-search__clear"
+            onClick={() => setSearchQuery("")}
+            title="Clear search"
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
+
+      {fileList.length === 0 ? (
+        <div className="file-list__empty">
+          <p>No files match "{searchQuery}"</p>
+          <button className="btn btn-secondary" onClick={() => setSearchQuery("")}>
+            Clear Search
+          </button>
+        </div>
+      ) : (
+        <div className="file-list">
+          {fileList.map((file) => (
+            <FileCardWithInteractions key={file.id} file={file}>
+              {file.linkType === "torrent" ? (
+                <TorrentFileCard
+                  file={file}
+                  canDelete={canBlockFiles}
+                  onDelete={handleBlockFile}
+                  canEdit={user?.address === file.uploader}
+                  onEdit={() => setEditingFile(file)}
+                />
+              ) : (
+                <FileCard 
+                  file={file} 
+                  canDelete={canBlockFiles}
+                  onDelete={handleBlockFile}
+                  canEdit={user?.address === file.uploader}
+                  onEdit={() => setEditingFile(file)}
+                />
+              )}
+            </FileCardWithInteractions>
+          ))}
+        </div>
+      )}
       
       <EditFileModal
         isOpen={!!editingFile}

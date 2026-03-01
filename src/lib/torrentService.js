@@ -52,7 +52,8 @@ export function seedFile(file, onProgress) {
       console.log("Magnet URI:", torrent.magnetURI);
       console.log("Trackers:", torrent.announce);
       
-      seedingTorrents.set(torrent.infoHash, torrent);
+      // Store with lowercase infohash for consistent lookups
+      seedingTorrents.set(torrent.infoHash.toLowerCase(), torrent);
       
       torrent.on("wire", (wire) => {
         console.log("Seeder: peer connected:", wire.peerId?.slice(0, 8));
@@ -202,7 +203,8 @@ export function downloadTorrent(torrentId, onProgress) {
       metadataReceived = true;
       clearTimeout(metadataTimeout);
       console.log("Got metadata for:", torrent.name, "files:", torrent.files.length);
-      downloadingTorrents.set(torrent.infoHash, torrent);
+      // Store with lowercase infohash for consistent lookups
+      downloadingTorrents.set(torrent.infoHash.toLowerCase(), torrent);
     });
     
     torrent.on("ready", () => {
@@ -296,7 +298,8 @@ export function downloadTorrent(torrentId, onProgress) {
  * Get torrent status by infohash
  */
 export function getTorrentStatus(infohash) {
-  const torrent = seedingTorrents.get(infohash) || downloadingTorrents.get(infohash);
+  const normalizedHash = infohash?.toLowerCase();
+  const torrent = seedingTorrents.get(normalizedHash) || downloadingTorrents.get(normalizedHash);
   if (!torrent) return null;
   
   return {
@@ -309,7 +312,7 @@ export function getTorrentStatus(infohash) {
     downloadSpeed: torrent.downloadSpeed,
     uploadSpeed: torrent.uploadSpeed,
     peers: torrent.numPeers,
-    seeding: seedingTorrents.has(infohash),
+    seeding: seedingTorrents.has(normalizedHash),
     done: torrent.done,
   };
 }
@@ -318,18 +321,19 @@ export function getTorrentStatus(infohash) {
  * Check if we're seeding a torrent
  */
 export function isSeeding(infohash) {
-  return seedingTorrents.has(infohash);
+  return seedingTorrents.has(infohash?.toLowerCase());
 }
 
 /**
  * Stop seeding a torrent
  */
 export function stopSeeding(infohash) {
-  const torrent = seedingTorrents.get(infohash);
+  const normalizedHash = infohash?.toLowerCase();
+  const torrent = seedingTorrents.get(normalizedHash);
   if (torrent) {
     torrent.destroy();
-    seedingTorrents.delete(infohash);
-    console.log("Stopped seeding:", infohash);
+    seedingTorrents.delete(normalizedHash);
+    console.log("Stopped seeding:", normalizedHash);
   }
 }
 

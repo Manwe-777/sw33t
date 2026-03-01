@@ -456,14 +456,21 @@ main {
 .icon-option {
   width: 32px;
   height: 32px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-muted);
   cursor: pointer;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition);
+}
+
+.icon-option svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 .icon-option:hover {
@@ -505,6 +512,49 @@ main {
   color: var(--text-muted);
   text-align: center;
   margin-top: 8px;
+}
+
+/* Debug Section */
+.debug-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.debug-section details {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.debug-section summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all var(--transition);
+}
+
+.debug-section summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.debug-section details[open] summary {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+
+.debug-section p {
+  margin: 4px 0;
+  padding: 4px 8px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
 }
 
 /* ============================================
@@ -1077,6 +1127,54 @@ main {
 /* ============================================
    File List
    ============================================ */
+.file-list-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  transition: all var(--transition);
+}
+
+.file-list-search:focus-within {
+  border-color: var(--accent);
+}
+
+.file-list-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.file-list-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.file-list-search__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition);
+}
+
+.file-list-search__clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
 .file-list {
   display: flex;
   flex-direction: column;
