@@ -233,7 +233,7 @@ interface FileData {
   id: string;
   name: string;
   description: string;
-  linkType: "www" | "magnet" | "tooldb";
+  linkType: "www" | "magnet" | "torrent";
   link: string;
 }
 // Uploader + timestamp from message metadata (msg.a, msg.t)
@@ -290,7 +290,7 @@ interface CommentData {
 - [x] Files per category (write-only MapCRDT)
 - [x] Add file form (name, description, linkType, link)
 - [x] File listing with metadata
-- [x] Link types: www, magnet, tooldb
+- [x] Link types: www, magnet, torrent (P2P upload)
 - [x] Copy link and open link actions
 - [x] Admin file blocklist (soft delete via `{categoryId}_blocklist`)
 

@@ -19,7 +19,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { UserAvatar } from "./Avatar";
 import { 
-  Link2, Magnet, Package, ExternalLink, Clock, Copy, Check, Trash2,
+  Link2, Magnet, ExternalLink, Clock, Copy, Check, Trash2,
   Upload, Download, Users, HardDrive, X, Pencil, Image, MessageSquare,
 } from "lucide-react";
 import IconButton from "./IconButton";
@@ -35,8 +35,6 @@ function getLinkIcon(linkType) {
       return <Link2 size={16} />;
     case "magnet":
       return <Magnet size={16} />;
-    case "tooldb":
-      return <Package size={16} />;
     case "torrent":
       return <Upload size={16} />;
     default:

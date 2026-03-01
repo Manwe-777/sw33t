@@ -148,8 +148,6 @@ export function getLinkTypeIcon(linkType) {
       return "🔗";
     case "magnet":
       return "🧲";
-    case "tooldb":
-      return "📦";
     case "torrent":
       return "📤";
     default:
@@ -163,8 +161,6 @@ export function getLinkTypeLabel(linkType) {
       return "Web Link";
     case "magnet":
       return "Magnet Link";
-    case "tooldb":
-      return "ToolDB";
     case "torrent":
       return "P2P File";
     default:

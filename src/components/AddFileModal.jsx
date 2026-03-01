@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { addFile } from "../lib/fileService";
 import { seedFile, formatBytes } from "../lib/torrentService";
-import { Link2, Magnet, Package, Upload, X, AlertTriangle, HardDrive, Image, Trash2 } from "lucide-react";
+import { Link2, Magnet, Upload, X, AlertTriangle, HardDrive, Image, Trash2 } from "lucide-react";
 
 const MAX_IMAGE_SIZE = 100 * 1024; // 100KB max for base64 images
 const MAX_IMAGE_DIMENSION = 400; // Max width/height for thumbnails
@@ -9,7 +9,6 @@ const MAX_IMAGE_DIMENSION = 400; // Max width/height for thumbnails
 const LINK_TYPES = [
   { id: "www", label: "Web Link", icon: Link2, placeholder: "https://example.com/file.zip" },
   { id: "magnet", label: "Magnet", icon: Magnet, placeholder: "magnet:?xt=urn:btih:..." },
-  { id: "tooldb", label: "ToolDB", icon: Package, placeholder: "tooldb://..." },
 ];
 
 function AddFileModal({ isOpen, onClose, categoryId, categoryName, onSuccess }) {
