@@ -206,8 +206,11 @@ async function performFullSync(db, channelId, config) {
  */
 function subscribeToChannelData(db, channelId, config) {
   const keyPatterns = [
-    `==ch:${channelId}:meta`,           // Channel metadata (frozen)
-    `ch:${channelId}:categories`,        // Categories CRDT
+    `==ch:${channelId}:owner`,          // Channel ownership (frozen)
+    `ch:${channelId}:meta`,             // Channel settings (editable)
+    `ch:${channelId}:admins`,           // Admin permissions
+    `ch:${channelId}:blocklist`,        // Blocked users
+    `ch:${channelId}:categories`,       // Categories
   ];
 
   for (const key of keyPatterns) {

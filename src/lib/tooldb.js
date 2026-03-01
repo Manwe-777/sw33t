@@ -2,7 +2,7 @@ import * as tooldb from "tool-db";
 import * as webrtcNetwork from "@tool-db/webrtc-network";
 import * as indexeddbStore from "@tool-db/indexeddb-store";
 import * as ecdsaUser from "@tool-db/ecdsa-user";
-import { hasPermission, PERMISSIONS } from "./permissions";
+import { hasPermission, PERMISSIONS, ALL_PERMISSIONS } from "./permissions";
 
 const ToolDb = tooldb.ToolDb || tooldb.default || tooldb;
 const ToolDbWebrtc = webrtcNetwork.default || webrtcNetwork;
@@ -12,15 +12,36 @@ const ToolDbEcdsaUser = ecdsaUser.default || ecdsaUser;
 let db = null;
 let currentTopic = null;
 let currentChannelId = null;
-let channelMetaCache = null;
+
+// Cache for permission verification
+let ownershipCache = null;
+let adminsCache = null;
 
 /**
- * Get the channel meta key (frozen namespace, namespaced by channel)
- * Format: ==ch:{channelId}:meta
+ * NEW KEY STRUCTURE:
+ * 
+ * ==ch:{channelId}:owner       (frozen) - Immutable ownership
+ * ch:{channelId}:meta          (regular) - Editable settings
+ * ch:{channelId}:admins        (regular) - Admin permissions
+ * ch:{channelId}:blocklist     (regular) - Blocked users
+ * ch:{channelId}:categories    (regular) - Categories
+ */
+
+/**
+ * Get the channel owner key (frozen namespace)
+ * Format: ==ch:{channelId}:owner
+ */
+export function getChannelOwnerKey() {
+  if (!currentChannelId) return "==channel-owner";
+  return `==ch:${currentChannelId}:owner`;
+}
+
+/**
+ * Get the channel meta key (for backwards compatibility)
+ * Now points to owner key for frozen namespace behavior
  */
 export function getChannelMetaKey() {
-  if (!currentChannelId) return "==channel-meta";
-  return `==ch:${currentChannelId}:meta`;
+  return getChannelOwnerKey();
 }
 
 /**
@@ -38,9 +59,9 @@ export function connectToChannel(channelId) {
   
   // Close existing connection if any
   if (db) {
-    // ToolDB doesn't have a close method, but we can replace the instance
     db = null;
-    channelMetaCache = null;
+    ownershipCache = null;
+    adminsCache = null;
   }
   
   currentTopic = topic;
@@ -55,28 +76,26 @@ export function connectToChannel(channelId) {
     topic: topic,
   });
   
-  // Subscribe to channel meta for permission verification
-  const metaKey = getChannelMetaKey();
-  console.log("Subscribing to channel meta key:", metaKey);
-  db.subscribeData(metaKey);
-  db.addKeyListener(metaKey, (msg) => {
+  // Subscribe to ownership for permission verification
+  const ownerKey = getChannelOwnerKey();
+  const adminsKey = getChannelKey("admins");
+  
+  console.log("Subscribing to channel keys:", { ownerKey, adminsKey });
+  
+  db.subscribeData(ownerKey);
+  db.subscribeData(adminsKey);
+  
+  db.addKeyListener(ownerKey, (msg) => {
     if (msg.v) {
-      channelMetaCache = migrateAdminsFormat(msg.v);
-      console.log("Channel meta cached for verification:", channelMetaCache);
+      ownershipCache = msg.v;
+      console.log("Channel ownership cached:", ownershipCache);
     }
   });
   
-  // Listen for frozen namespace conflict resolution
-  // This happens when another peer had an older (winning) channel meta
-  db.on("username-conflict-resolved", (event) => {
-    if (event.username === metaKey) {
-      console.log("Channel meta conflict resolved, re-fetching...");
-      db.getData(metaKey).then((data) => {
-        if (data) {
-          channelMetaCache = migrateAdminsFormat(data);
-          console.log("Channel meta updated after conflict:", channelMetaCache);
-        }
-      });
+  db.addKeyListener(adminsKey, (msg) => {
+    if (msg.v) {
+      adminsCache = msg.v;
+      console.log("Channel admins cached:", adminsCache);
     }
   });
   
@@ -90,32 +109,36 @@ export function connectToChannel(channelId) {
 }
 
 /**
- * Migrate old array-based admins format to new object format
- */
-function migrateAdminsFormat(meta) {
-  if (!meta) return meta;
-  if (meta.admins && typeof meta.admins === 'object' && !Array.isArray(meta.admins)) {
-    return meta;
-  }
-  if (Array.isArray(meta.admins)) {
-    const ALL_PERMISSIONS = 63; // All bits set
-    const DEFAULT_ADMIN_PERMISSIONS = 35; // BLOCK_FILES | BLOCK_USERS | CREATE_CATEGORIES
-    const newAdmins = {};
-    meta.admins.forEach((addr) => {
-      newAdmins[addr] = (addr === meta.creator) ? ALL_PERMISSIONS : DEFAULT_ADMIN_PERMISSIONS;
-    });
-    return { ...meta, admins: newAdmins };
-  }
-  return meta;
-}
-
-/**
  * Check if a user has a specific permission
  */
 function userHasPermission(userAddress, permission) {
-  if (!channelMetaCache || !channelMetaCache.admins || !userAddress) return false;
-  const perms = channelMetaCache.admins[userAddress] || 0;
+  if (!userAddress) return false;
+  
+  // Creator always has all permissions
+  if (ownershipCache?.creator === userAddress) {
+    return true;
+  }
+  
+  // Check admins cache
+  const adminData = adminsCache?.[userAddress];
+  if (!adminData) return false;
+  
+  const perms = adminData.permissions || 0;
   return hasPermission(perms, permission);
+}
+
+/**
+ * Get user's permission value
+ */
+function getUserPermissions(userAddress) {
+  if (!userAddress) return 0;
+  
+  // Creator always has all permissions
+  if (ownershipCache?.creator === userAddress) {
+    return ALL_PERMISSIONS;
+  }
+  
+  return adminsCache?.[userAddress]?.permissions || 0;
 }
 
 /**
@@ -125,7 +148,6 @@ function blocklistVerificator(msg, previousData) {
   return new Promise((resolve) => {
     const writerAddress = msg.a;
     
-    // Check if writer has BLOCK_FILES permission
     if (userHasPermission(writerAddress, PERMISSIONS.BLOCK_FILES)) {
       console.log("Blocklist write allowed for:", writerAddress);
       resolve(true);
@@ -143,7 +165,6 @@ function categoriesVerificator(msg, previousData) {
   return new Promise((resolve) => {
     const writerAddress = msg.a;
     
-    // If adding new categories, check permission
     if (userHasPermission(writerAddress, PERMISSIONS.CREATE_CATEGORIES)) {
       console.log("Categories write allowed for:", writerAddress);
       resolve(true);
@@ -154,7 +175,7 @@ function categoriesVerificator(msg, previousData) {
       const newKeys = Object.keys(newValue).filter(k => !(k in oldValue));
       
       if (newKeys.length === 0) {
-        resolve(true); // No new categories, allow sync
+        resolve(true);
       } else {
         console.warn("Categories write REJECTED - no CREATE_CATEGORIES permission:", writerAddress);
         resolve(false);
@@ -164,23 +185,100 @@ function categoriesVerificator(msg, previousData) {
 }
 
 /**
+ * Verificator for channel meta/settings - requires EDIT_CHANNEL permission
+ */
+function metaVerificator(msg, previousData) {
+  return new Promise((resolve) => {
+    const writerAddress = msg.a;
+    
+    // Allow first write (channel creation)
+    if (!previousData?.v) {
+      console.log("Meta write allowed (initial creation):", writerAddress);
+      resolve(true);
+      return;
+    }
+    
+    if (userHasPermission(writerAddress, PERMISSIONS.EDIT_CHANNEL)) {
+      console.log("Meta write allowed for:", writerAddress);
+      resolve(true);
+    } else {
+      console.warn("Meta write REJECTED - no EDIT_CHANNEL permission:", writerAddress);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * Verificator for admins - requires PROMOTE_ADMINS permission
+ */
+function adminsVerificator(msg, previousData) {
+  return new Promise((resolve) => {
+    const writerAddress = msg.a;
+    
+    // Allow first write (channel creation by owner)
+    if (!previousData?.v) {
+      console.log("Admins write allowed (initial creation):", writerAddress);
+      resolve(true);
+      return;
+    }
+    
+    if (userHasPermission(writerAddress, PERMISSIONS.PROMOTE_ADMINS)) {
+      console.log("Admins write allowed for:", writerAddress);
+      resolve(true);
+    } else {
+      console.warn("Admins write REJECTED - no PROMOTE_ADMINS permission:", writerAddress);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * Verificator for user blocklist - requires BLOCK_USERS permission
+ */
+function userBlocklistVerificator(msg, previousData) {
+  return new Promise((resolve) => {
+    const writerAddress = msg.a;
+    
+    // Allow first write
+    if (!previousData?.v) {
+      resolve(true);
+      return;
+    }
+    
+    if (userHasPermission(writerAddress, PERMISSIONS.BLOCK_USERS)) {
+      console.log("User blocklist write allowed for:", writerAddress);
+      resolve(true);
+    } else {
+      console.warn("User blocklist write REJECTED - no BLOCK_USERS permission:", writerAddress);
+      resolve(false);
+    }
+  });
+}
+
+/**
  * Set up custom verificators for permission enforcement
  */
 function setupVerificators(dbInstance) {
-  // Verificator for blocklist keys (e.g., "ch:channelId:categoryId_blocklist")
-  // The key pattern will match any key containing "_blocklist"
+  // File blocklist (e.g., "ch:channelId:categoryId_blocklist")
   dbInstance.addCustomVerification("_blocklist", blocklistVerificator);
   
-  // Verificator for categories (e.g., "ch:channelId:categories")
-  // The key pattern will match any key containing "categories"
-  dbInstance.addCustomVerification("categories", categoriesVerificator);
+  // Categories
+  dbInstance.addCustomVerification(":categories", categoriesVerificator);
+  
+  // Channel meta/settings (but not ownership which is frozen)
+  dbInstance.addCustomVerification(":meta", metaVerificator);
+  
+  // Admins
+  dbInstance.addCustomVerification(":admins", adminsVerificator);
+  
+  // User blocklist
+  dbInstance.addCustomVerification(":blocklist", userBlocklistVerificator);
   
   console.log("Custom verificators registered for permission enforcement");
 }
 
 /**
  * Get the current ToolDB instance
- * @returns {ToolDb|null}
  */
 export function getToolDb() {
   return db;
@@ -188,7 +286,6 @@ export function getToolDb() {
 
 /**
  * Get the current topic/channel
- * @returns {string|null}
  */
 export function getCurrentTopic() {
   return currentTopic;
@@ -196,7 +293,6 @@ export function getCurrentTopic() {
 
 /**
  * Get the current channel ID (without sw33t- prefix)
- * @returns {string|null}
  */
 export function getCurrentChannelId() {
   if (!currentTopic) return null;
@@ -205,8 +301,6 @@ export function getCurrentChannelId() {
 
 /**
  * Create a channel-namespaced key
- * @param {string} key - The base key
- * @returns {string} The namespaced key
  */
 export function getChannelKey(key) {
   const channelId = getCurrentChannelId();
@@ -214,6 +308,13 @@ export function getChannelKey(key) {
     console.warn("No channel connected, using key without namespace:", key);
     return key;
   }
-  // Use format: ch:{channelId}:{key}
   return `ch:${channelId}:${key}`;
+}
+
+/**
+ * Reset caches (called when switching channels)
+ */
+export function resetToolDbCache() {
+  ownershipCache = null;
+  adminsCache = null;
 }

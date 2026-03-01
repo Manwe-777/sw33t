@@ -1,4 +1,4 @@
-import { getToolDb, getChannelKey, getChannelMetaKey } from "./tooldb";
+import { getToolDb, getChannelKey, getCurrentChannelId } from "./tooldb";
 import { 
   PERMISSIONS, 
   ALL_PERMISSIONS, 
@@ -7,34 +7,117 @@ import {
   permissionsToString,
 } from "./permissions";
 
-// Categories need to be namespaced by channel
+/**
+ * NEW DATA STRUCTURE:
+ * 
+ * ==ch:{id}:owner              (frozen) - Immutable ownership
+ *   └── { creator, createdAt }
+ * 
+ * ch:{id}:meta                 (regular key) - Editable settings
+ *   └── { name, description, avatar }
+ * 
+ * ch:{id}:admins               (regular key) - Admin permissions with audit trail
+ *   └── { [address]: { permissions, promotedBy, promotedAt } }
+ * 
+ * ch:{id}:blocklist            (regular key) - Blocked users
+ *   └── { [address]: { blockedBy, blockedAt, reason? } }
+ * 
+ * ch:{id}:categories           (regular key) - Already exists
+ *   └── { [id]: { name, icon, createdBy, createdAt, deleted? } }
+ */
+
+// Key helpers
+function getOwnerKey() {
+  const channelId = getCurrentChannelId();
+  if (!channelId) return "==channel-owner";
+  return `==ch:${channelId}:owner`;
+}
+
+function getMetaKey() {
+  return getChannelKey("meta");
+}
+
+function getAdminsKey() {
+  return getChannelKey("admins");
+}
+
+function getBlocklistKey() {
+  return getChannelKey("blocklist");
+}
+
 function getCategoriesKey() {
   return getChannelKey("categories");
 }
 
-let channelMetaListeners = [];
-let currentChannelMeta = null;
+// Cache for combined channel data
+let ownershipCache = null;
+let settingsCache = null;
+let adminsCache = null;
+let blocklistCache = null;
 
-// Local listeners for immediate UI updates on local writes
-let localMetaListeners = [];
+// Local listeners for immediate UI updates
+let channelDataListeners = [];
 
-// Notify local listeners (called after local writes)
-function notifyMetaListeners(meta) {
-  currentChannelMeta = meta;
-  localMetaListeners.forEach(cb => {
+// Notify listeners with combined data
+function notifyListeners() {
+  const combinedData = getCombinedChannelData();
+  channelDataListeners.forEach(cb => {
     try {
-      cb(meta);
+      cb(combinedData);
     } catch (err) {
-      console.error("Meta listener error:", err);
+      console.error("Channel data listener error:", err);
     }
   });
+}
+
+// Combine all channel data into the old meta format for backwards compatibility
+function getCombinedChannelData() {
+  if (!ownershipCache) return null;
+  
+  return {
+    // From ownership (immutable)
+    creator: ownershipCache.creator,
+    createdAt: ownershipCache.createdAt,
+    // From settings (editable)
+    name: settingsCache?.name || getCurrentChannelId(),
+    description: settingsCache?.description || "",
+    avatar: settingsCache?.avatar || null,
+    // From admins (with audit trail)
+    admins: buildAdminsObject(),
+    // From blocklist
+    blocklist: blocklistCache ? Object.keys(blocklistCache) : [],
+    // Full data for audit trail
+    _adminsAudit: adminsCache,
+    _blocklistAudit: blocklistCache,
+  };
+}
+
+// Build simple admins object { address: permissions } for backwards compatibility
+function buildAdminsObject() {
+  const admins = {};
+  
+  // Creator always has all permissions
+  if (ownershipCache?.creator) {
+    admins[ownershipCache.creator] = ALL_PERMISSIONS;
+  }
+  
+  // Add other admins
+  if (adminsCache) {
+    for (const [address, data] of Object.entries(adminsCache)) {
+      if (address !== ownershipCache?.creator) {
+        admins[address] = data.permissions || 0;
+      }
+    }
+  }
+  
+  return admins;
 }
 
 // Re-export permissions for convenience
 export { PERMISSIONS } from "./permissions";
 
 export function getChannelMetaSync() {
-  return currentChannelMeta;
+  return getCombinedChannelData();
 }
 
 export async function getChannelMeta() {
@@ -42,10 +125,21 @@ export async function getChannelMeta() {
   if (!db) return null;
   
   try {
-    const meta = await db.getData(getChannelMetaKey());
-    return meta || null;
+    const [ownership, settings, admins, blocklist] = await Promise.all([
+      db.getData(getOwnerKey()),
+      db.getData(getMetaKey()),
+      db.getData(getAdminsKey()),
+      db.getData(getBlocklistKey()),
+    ]);
+    
+    ownershipCache = ownership;
+    settingsCache = settings;
+    adminsCache = admins;
+    blocklistCache = blocklist;
+    
+    return getCombinedChannelData();
   } catch (err) {
-    console.error("Failed to get channel meta:", err);
+    console.error("Failed to get channel data:", err);
     return null;
   }
 }
@@ -57,35 +151,47 @@ export async function waitForChannelSync(timeoutMs = 5000) {
   return new Promise((resolve) => {
     let resolved = false;
     
-    db.subscribeData(getChannelMetaKey());
+    const ownerKey = getOwnerKey();
+    db.subscribeData(ownerKey);
     
     const listener = (msg) => {
       if (!resolved && msg.v) {
         resolved = true;
-        currentChannelMeta = msg.v;
-        resolve(msg.v);
+        ownershipCache = msg.v;
+        resolve(getCombinedChannelData());
       }
     };
     
-    db.addKeyListener(getChannelMetaKey(), listener);
+    db.addKeyListener(ownerKey, listener);
     
-    // Try multiple times with increasing delays to handle slow peer connections
+    // Try multiple times with increasing delays
     const tryGetData = async (attempt = 1) => {
       if (resolved) return;
       
       try {
-        const existing = await db.getData(getChannelMetaKey(), false, 2000);
-        if (!resolved && existing) {
+        const ownership = await db.getData(ownerKey, false, 2000);
+        if (!resolved && ownership) {
           resolved = true;
-          currentChannelMeta = existing;
-          resolve(existing);
+          ownershipCache = ownership;
+          
+          // Also fetch other data
+          const [settings, admins, blocklist] = await Promise.all([
+            db.getData(getMetaKey()).catch(() => null),
+            db.getData(getAdminsKey()).catch(() => null),
+            db.getData(getBlocklistKey()).catch(() => null),
+          ]);
+          
+          settingsCache = settings;
+          adminsCache = admins;
+          blocklistCache = blocklist;
+          
+          resolve(getCombinedChannelData());
           return;
         }
       } catch (e) {
         // Ignore errors, will retry
       }
       
-      // Retry up to 3 times with 1 second delay
       if (attempt < 3 && !resolved) {
         setTimeout(() => tryGetData(attempt + 1), 1000);
       }
@@ -107,82 +213,69 @@ export async function initializeChannel(channelId, userAddress, username) {
   if (!db) throw new Error("Not connected");
   
   console.log("Waiting for channel sync...");
-  // Wait longer for channel sync to allow peer discovery
-  const existingMeta = await waitForChannelSync(5000);
+  const existingData = await waitForChannelSync(5000);
   
-  if (existingMeta) {
-    // Migrate old array-based admins to object-based if needed
-    const migratedMeta = migrateAdminsFormat(existingMeta);
-    console.log("Channel already exists, created by:", migratedMeta.creator);
-    
-    // Persist migration if format changed (only creator should do this to avoid conflicts)
-    const wasArray = Array.isArray(existingMeta.admins);
-    if (wasArray && existingMeta.creator === userAddress) {
-      console.log("Persisting migrated admin format to database...");
-      await db.putData(getChannelMetaKey(), migratedMeta);
-    }
-    
-    currentChannelMeta = migratedMeta;
-    return migratedMeta;
+  if (existingData) {
+    console.log("Channel already exists, created by:", existingData.creator);
+    return existingData;
   }
   
   console.log("No existing channel found, creating new one...");
   
-  const meta = {
+  const now = Date.now();
+  
+  // 1. Create immutable ownership (frozen namespace)
+  const ownership = {
+    creator: userAddress,
+    createdAt: now,
+  };
+  await db.putData(getOwnerKey(), ownership);
+  ownershipCache = ownership;
+  
+  // 2. Create initial settings
+  const settings = {
     name: channelId,
     description: "",
-    createdAt: Date.now(),
-    creator: userAddress,
-    admins: {
-      [userAddress]: ALL_PERMISSIONS, // Creator gets all permissions
-    },
-    blocklist: [],
+    avatar: null,
   };
+  await db.putData(getMetaKey(), settings);
+  settingsCache = settings;
   
-  await db.putData(getChannelMetaKey(), meta);
-  currentChannelMeta = meta;
-  console.log("Channel initialized, user is creator with all permissions:", userAddress);
-  return meta;
+  // 3. Create initial admins (creator with full permissions and audit trail)
+  const admins = {
+    [userAddress]: {
+      permissions: ALL_PERMISSIONS,
+      promotedBy: userAddress,  // Self (creator)
+      promotedAt: now,
+    },
+  };
+  await db.putData(getAdminsKey(), admins);
+  adminsCache = admins;
+  
+  // 4. Initialize empty blocklist
+  await db.putData(getBlocklistKey(), {});
+  blocklistCache = {};
+  
+  const combinedData = getCombinedChannelData();
+  console.log("Channel initialized, user is creator:", userAddress);
+  notifyListeners();
+  
+  return combinedData;
 }
 
 /**
- * Migrate old array-based admins format to new object-based format
- */
-export function migrateAdminsFormat(meta) {
-  if (!meta) return meta;
-  
-  // Already in new format (object)
-  if (meta.admins && typeof meta.admins === 'object' && !Array.isArray(meta.admins)) {
-    return meta;
-  }
-  
-  // Migrate from array format
-  if (Array.isArray(meta.admins)) {
-    const newAdmins = {};
-    meta.admins.forEach((addr, index) => {
-      // First admin (creator) gets all permissions, others get default
-      newAdmins[addr] = (addr === meta.creator) ? ALL_PERMISSIONS : DEFAULT_ADMIN_PERMISSIONS;
-    });
-    return { ...meta, admins: newAdmins };
-  }
-  
-  return meta;
-}
-
-/**
- * Check if user has any admin permissions (is in admins object)
+ * Check if user has any admin permissions
  */
 export function isAdmin(meta, userAddress) {
-  if (!meta || !meta.admins || !userAddress) return false;
-  const migrated = migrateAdminsFormat(meta);
-  return userAddress in migrated.admins;
+  if (!meta || !userAddress) return false;
+  return userAddress in (meta.admins || {});
 }
 
 /**
  * Check if user is the channel creator
  */
 export function isCreator(meta, userAddress) {
-  if (!meta || !meta.creator || !userAddress) return false;
+  if (!meta || !userAddress) return false;
   return meta.creator === userAddress;
 }
 
@@ -192,14 +285,12 @@ export function isCreator(meta, userAddress) {
 export function getUserPermissions(meta, userAddress) {
   if (!meta || !userAddress) return 0;
   
-  // Creator ALWAYS has all permissions, regardless of what's in admins
+  // Creator ALWAYS has all permissions
   if (meta.creator === userAddress) {
     return ALL_PERMISSIONS;
   }
   
-  if (!meta.admins) return 0;
-  const migrated = migrateAdminsFormat(meta);
-  return migrated.admins[userAddress] || 0;
+  return meta.admins?.[userAddress] || 0;
 }
 
 /**
@@ -218,33 +309,76 @@ export function getUserPermissionsString(meta, userAddress) {
   return permissionsToString(perms);
 }
 
-export async function updateChannelMeta(updates) {
+/**
+ * Get the audit trail for an admin
+ */
+export function getAdminAuditInfo(meta, userAddress) {
+  if (!meta?._adminsAudit?.[userAddress]) return null;
+  return meta._adminsAudit[userAddress];
+}
+
+/**
+ * Get full admin history (for time travel view)
+ */
+export function getAdminHistory(meta) {
+  if (!meta?._adminsAudit) return [];
+  
+  const history = [];
+  for (const [address, data] of Object.entries(meta._adminsAudit)) {
+    history.push({
+      address,
+      permissions: data.permissions,
+      promotedBy: data.promotedBy,
+      promotedAt: data.promotedAt,
+      isCreator: address === meta.creator,
+    });
+  }
+  
+  // Sort by promotion time
+  return history.sort((a, b) => a.promotedAt - b.promotedAt);
+}
+
+export async function updateChannelSettings(updates) {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const existingMeta = await getChannelMeta();
+  const meta = getCombinedChannelData();
   
-  if (!existingMeta) {
+  if (!meta) {
     throw new Error("Channel not initialized");
   }
   
-  if (!userHasPermission(existingMeta, userAddress, PERMISSIONS.EDIT_CHANNEL)) {
+  if (!userHasPermission(meta, userAddress, PERMISSIONS.EDIT_CHANNEL)) {
     throw new Error("You don't have permission to edit channel settings");
   }
   
-  const newMeta = { ...migrateAdminsFormat(existingMeta), ...updates };
-  await db.putData(getChannelMetaKey(), newMeta);
-  notifyMetaListeners(newMeta);
-  return newMeta;
+  // Only update settings (not ownership)
+  const newSettings = {
+    ...settingsCache,
+    ...updates,
+  };
+  
+  // Don't allow changing ownership-related fields through this method
+  delete newSettings.creator;
+  delete newSettings.createdAt;
+  
+  await db.putData(getMetaKey(), newSettings);
+  settingsCache = newSettings;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
+
+// Backwards compatibility alias
+export const updateChannelMeta = updateChannelSettings;
 
 export async function promoteToAdmin(targetAddress, permissions = DEFAULT_ADMIN_PERMISSIONS) {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.PROMOTE_ADMINS)) {
     throw new Error("You don't have permission to promote admins");
@@ -256,17 +390,21 @@ export async function promoteToAdmin(targetAddress, permissions = DEFAULT_ADMIN_
     throw new Error("Cannot grant permissions you don't have");
   }
   
-  const newMeta = {
-    ...meta,
-    admins: {
-      ...meta.admins,
-      [targetAddress]: permissions,
+  const now = Date.now();
+  const newAdmins = {
+    ...adminsCache,
+    [targetAddress]: {
+      permissions,
+      promotedBy: userAddress,
+      promotedAt: now,
     },
   };
   
-  await db.putData(getChannelMetaKey(), newMeta);
-  notifyMetaListeners(newMeta);
-  return newMeta;
+  await db.putData(getAdminsKey(), newAdmins);
+  adminsCache = newAdmins;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
 
 export async function updateAdminPermissions(targetAddress, permissions) {
@@ -274,7 +412,7 @@ export async function updateAdminPermissions(targetAddress, permissions) {
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.PROMOTE_ADMINS)) {
     throw new Error("You don't have permission to modify admin permissions");
@@ -284,7 +422,7 @@ export async function updateAdminPermissions(targetAddress, permissions) {
     throw new Error("Cannot modify creator's permissions");
   }
   
-  if (!(targetAddress in meta.admins)) {
+  if (!adminsCache?.[targetAddress]) {
     throw new Error("User is not an admin");
   }
   
@@ -294,17 +432,25 @@ export async function updateAdminPermissions(targetAddress, permissions) {
     throw new Error("Cannot grant permissions you don't have");
   }
   
-  const newMeta = {
-    ...meta,
-    admins: {
-      ...meta.admins,
-      [targetAddress]: permissions,
+  const now = Date.now();
+  const existingData = adminsCache[targetAddress];
+  
+  const newAdmins = {
+    ...adminsCache,
+    [targetAddress]: {
+      ...existingData,
+      permissions,
+      // Keep original promotedBy/At, add update info
+      updatedBy: userAddress,
+      updatedAt: now,
     },
   };
   
-  await db.putData(getChannelMetaKey(), newMeta);
-  notifyMetaListeners(newMeta);
-  return newMeta;
+  await db.putData(getAdminsKey(), newAdmins);
+  adminsCache = newAdmins;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
 
 export async function demoteAdmin(targetAddress) {
@@ -312,7 +458,7 @@ export async function demoteAdmin(targetAddress) {
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.DEMOTE_ADMINS)) {
     throw new Error("You don't have permission to demote admins");
@@ -322,41 +468,61 @@ export async function demoteAdmin(targetAddress) {
     throw new Error("Cannot demote the channel creator");
   }
   
-  const { [targetAddress]: _, ...remainingAdmins } = meta.admins;
+  // Mark as demoted instead of deleting (audit trail)
+  const now = Date.now();
+  const existingData = adminsCache?.[targetAddress];
   
-  const newMeta = {
-    ...meta,
-    admins: remainingAdmins,
+  if (!existingData) {
+    throw new Error("User is not an admin");
+  }
+  
+  const newAdmins = {
+    ...adminsCache,
+    [targetAddress]: {
+      ...existingData,
+      permissions: 0,  // Remove all permissions
+      demotedBy: userAddress,
+      demotedAt: now,
+    },
   };
   
-  await db.putData(getChannelMetaKey(), newMeta);
-  notifyMetaListeners(newMeta);
-  return newMeta;
+  await db.putData(getAdminsKey(), newAdmins);
+  adminsCache = newAdmins;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
 
-export async function addToBlocklist(targetAddress) {
+export async function addToBlocklist(targetAddress, reason = "") {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.BLOCK_USERS)) {
     throw new Error("You don't have permission to block users");
   }
   
-  if (meta.blocklist?.includes(targetAddress)) {
-    return meta;
+  if (blocklistCache?.[targetAddress]) {
+    return meta; // Already blocked
   }
   
-  const newMeta = {
-    ...meta,
-    blocklist: [...(meta.blocklist || []), targetAddress],
+  const now = Date.now();
+  const newBlocklist = {
+    ...blocklistCache,
+    [targetAddress]: {
+      blockedBy: userAddress,
+      blockedAt: now,
+      reason,
+    },
   };
   
-  await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
-  return newMeta;
+  await db.putData(getBlocklistKey(), newBlocklist);
+  blocklistCache = newBlocklist;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
 
 export async function removeFromBlocklist(targetAddress) {
@@ -364,20 +530,37 @@ export async function removeFromBlocklist(targetAddress) {
   if (!db) throw new Error("Not connected");
   
   const userAddress = db.userAccount?.getAddress();
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.BLOCK_USERS)) {
     throw new Error("You don't have permission to unblock users");
   }
   
-  const newMeta = {
-    ...meta,
-    blocklist: (meta.blocklist || []).filter(a => a !== targetAddress),
+  if (!blocklistCache?.[targetAddress]) {
+    return meta; // Not blocked
+  }
+  
+  // Mark as unblocked (audit trail)
+  const now = Date.now();
+  const existingData = blocklistCache[targetAddress];
+  
+  const newBlocklist = {
+    ...blocklistCache,
+    [targetAddress]: {
+      ...existingData,
+      unblockedBy: userAddress,
+      unblockedAt: now,
+    },
   };
   
-  await db.putData(getChannelMetaKey(), newMeta);
-  currentChannelMeta = newMeta;
-  return newMeta;
+  // Actually remove from blocklist for active check
+  delete newBlocklist[targetAddress];
+  
+  await db.putData(getBlocklistKey(), newBlocklist);
+  blocklistCache = newBlocklist;
+  notifyListeners();
+  
+  return getCombinedChannelData();
 }
 
 export async function getCategories() {
@@ -385,8 +568,7 @@ export async function getCategories() {
   if (!db) return {};
   
   try {
-    const key = getCategoriesKey();
-    const categories = await db.getData(key);
+    const categories = await db.getData(getCategoriesKey());
     return categories || {};
   } catch (err) {
     console.error("Failed to get categories:", err);
@@ -394,7 +576,7 @@ export async function getCategories() {
   }
 }
 
-// Local categories cache for immediate UI updates
+// Local categories cache
 let localCategoriesCache = null;
 let categoriesListeners = [];
 
@@ -426,17 +608,11 @@ export async function createCategory(id, name, icon = "folder") {
   
   const updated = { ...existing, [id]: category };
   await db.putData(getCategoriesKey(), updated);
-  
-  // Immediately notify listeners for instant UI update
   notifyCategoriesListeners(updated);
   
   return category;
 }
 
-/**
- * Delete (archive) a category - marks it as deleted
- * In P2P systems we can't truly delete, so this is a soft delete
- */
 export async function deleteCategory(categoryId) {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
@@ -444,7 +620,7 @@ export async function deleteCategory(categoryId) {
   const userAddress = db.userAccount?.getAddress();
   if (!userAddress) throw new Error("Not authenticated");
   
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.DELETE_CATEGORIES)) {
     throw new Error("You don't have permission to delete categories");
@@ -468,16 +644,11 @@ export async function deleteCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
-  
-  // Immediately notify listeners for instant UI update
   notifyCategoriesListeners(updated);
   
   return updated;
 }
 
-/**
- * Restore a deleted category
- */
 export async function restoreCategory(categoryId) {
   const db = getToolDb();
   if (!db) throw new Error("Not connected");
@@ -485,7 +656,7 @@ export async function restoreCategory(categoryId) {
   const userAddress = db.userAccount?.getAddress();
   if (!userAddress) throw new Error("Not authenticated");
   
-  const meta = migrateAdminsFormat(await getChannelMeta());
+  const meta = getCombinedChannelData();
   
   if (!userHasPermission(meta, userAddress, PERMISSIONS.DELETE_CATEGORIES)) {
     throw new Error("You don't have permission to restore categories");
@@ -505,16 +676,11 @@ export async function restoreCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
-  
-  // Immediately notify listeners for instant UI update
   notifyCategoriesListeners(updated);
   
   return updated;
 }
 
-/**
- * Check if a category is deleted
- */
 export function isCategoryDeleted(category) {
   return category?.deleted != null;
 }
@@ -523,71 +689,60 @@ export function subscribeToChannelMeta(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
-  // Add to local listeners for immediate updates on local writes
-  localMetaListeners.push(callback);
+  // Add to listeners
+  channelDataListeners.push(callback);
   
   // If we have cached data, call immediately
-  if (currentChannelMeta) {
-    callback(currentChannelMeta);
+  const current = getCombinedChannelData();
+  if (current) {
+    callback(current);
   }
   
-  db.subscribeData(getChannelMetaKey());
+  // Subscribe to all relevant keys
+  const ownerKey = getOwnerKey();
+  const metaKey = getMetaKey();
+  const adminsKey = getAdminsKey();
+  const blocklistKey = getBlocklistKey();
   
-  const listener = (msg) => {
+  db.subscribeData(ownerKey);
+  db.subscribeData(metaKey);
+  db.subscribeData(adminsKey);
+  db.subscribeData(blocklistKey);
+  
+  // Ownership listener
+  db.addKeyListener(ownerKey, (msg) => {
     if (msg.v) {
-      currentChannelMeta = msg.v;
-      callback(msg.v);
+      ownershipCache = msg.v;
+      notifyListeners();
     }
-  };
+  });
   
-  db.addKeyListener(getChannelMetaKey(), listener);
-  channelMetaListeners.push(listener);
-  
-  // Listen for frozen namespace conflict resolution
-  // This happens when another peer had an older (winning) channel meta
-  const metaKey = getChannelMetaKey();
-  const conflictListener = (event) => {
-    if (event.username === metaKey) {
-      console.log("Channel meta conflict resolved:", event);
-      // Re-fetch the winning data and update UI
-      db.getData(metaKey).then((data) => {
-        if (data) {
-          currentChannelMeta = data;
-          callback(data);
-        }
-      });
+  // Settings listener
+  db.addKeyListener(metaKey, (msg) => {
+    if (msg.v) {
+      settingsCache = msg.v;
+      notifyListeners();
     }
-  };
+  });
   
-  db.on("username-conflict-resolved", conflictListener);
-  
-  // Also listen for when current user loses their channel ownership
-  const lostListener = (event) => {
-    if (event.username === metaKey.replace("==", "")) {
-      console.log("Current user lost channel ownership:", event);
-      // Re-fetch the winning data
-      db.getData(metaKey).then((data) => {
-        if (data) {
-          currentChannelMeta = data;
-          callback(data);
-        }
-      });
+  // Admins listener
+  db.addKeyListener(adminsKey, (msg) => {
+    if (msg.v) {
+      adminsCache = msg.v;
+      notifyListeners();
     }
-  };
+  });
   
-  db.on("current-user-lost-username", lostListener);
+  // Blocklist listener
+  db.addKeyListener(blocklistKey, (msg) => {
+    if (msg.v) {
+      blocklistCache = msg.v;
+      notifyListeners();
+    }
+  });
   
   return () => {
-    channelMetaListeners = channelMetaListeners.filter(l => l !== listener);
-    localMetaListeners = localMetaListeners.filter(cb => cb !== callback);
-    // Note: EventEmitter cleanup - these may not unsubscribe properly in browser
-    // but the listeners are lightweight and check the key
-    try {
-      db.off?.("username-conflict-resolved", conflictListener);
-      db.off?.("current-user-lost-username", lostListener);
-    } catch (e) {
-      // Ignore if off() doesn't exist
-    }
+    channelDataListeners = channelDataListeners.filter(cb => cb !== callback);
   };
 }
 
@@ -595,10 +750,8 @@ export function subscribeToCategories(callback) {
   const db = getToolDb();
   if (!db) return () => {};
   
-  // Add to local listeners for immediate updates on local writes
   categoriesListeners.push(callback);
   
-  // If we have cached data, call immediately
   if (localCategoriesCache) {
     callback(localCategoriesCache);
   }
@@ -614,4 +767,22 @@ export function subscribeToCategories(callback) {
   return () => {
     categoriesListeners = categoriesListeners.filter(cb => cb !== callback);
   };
+}
+
+// Reset caches when switching channels
+export function resetChannelCache() {
+  ownershipCache = null;
+  settingsCache = null;
+  adminsCache = null;
+  blocklistCache = null;
+  localCategoriesCache = null;
+  channelDataListeners = [];
+  categoriesListeners = [];
+}
+
+/**
+ * No-op for backwards compatibility - new format doesn't need migration
+ */
+export function migrateAdminsFormat(meta) {
+  return meta;
 }

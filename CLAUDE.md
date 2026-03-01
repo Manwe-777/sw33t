@@ -162,29 +162,68 @@ Every ToolDB message contains:
 
 ## Data Model
 
-### Channel Metadata (Frozen Namespace)
+### Channel Data Structure (Split Keys)
+
+Channel data is split across multiple keys to separate immutable ownership from editable settings:
+
 ```typescript
-// Key: ==channel-meta
-interface ChannelMeta {
+// ==ch:{channelId}:owner (Frozen namespace - immutable)
+interface ChannelOwnership {
+  creator: string;       // Creator address (never changes)
+  createdAt: number;     // Creation timestamp
+}
+
+// ch:{channelId}:meta (Regular key - editable by admins)
+interface ChannelSettings {
   name: string;
   description: string;
-  admins: string[];      // Array of admin addresses
-  blocklist: string[];   // Blocked user addresses
-  createdBy: string;
-  createdAt: number;
+  avatar: string | null;
+}
+
+// ch:{channelId}:admins (Regular key - with audit trail)
+interface AdminsMap {
+  [address: string]: {
+    permissions: number;       // Bitwise permission flags
+    promotedBy: string;        // Who promoted this admin
+    promotedAt: number;        // When they were promoted
+    updatedBy?: string;        // Who last modified permissions
+    updatedAt?: number;        // When permissions were modified
+    demotedBy?: string;        // Who demoted (if permissions = 0)
+    demotedAt?: number;        // When demoted
+  };
+}
+
+// ch:{channelId}:blocklist (Regular key - with audit trail)
+interface BlocklistMap {
+  [address: string]: {
+    blockedBy: string;
+    blockedAt: number;
+    reason?: string;
+  };
+}
+
+// ch:{channelId}:categories (Regular key)
+interface CategoriesMap {
+  [id: string]: {
+    id: string;
+    name: string;
+    icon: string;
+    createdBy: string;
+    createdAt: number;
+    deleted?: {
+      deletedBy: string;
+      deletedAt: number;
+    };
+  };
 }
 ```
 
-### Categories (MapCRDT)
-```typescript
-// Key: categories
-// MapCRDT<CategoryData>
-interface CategoryData {
-  id: string;
-  name: string;
-  description: string;
-}
-```
+### Why Split Keys?
+
+1. **Ownership is immutable** - Creator can never be changed (frozen namespace `==`)
+2. **Settings are editable** - Name, description, avatar can be updated by admins
+3. **Audit trail** - Admins/blocklist track who made changes and when
+4. **No timestamp conflicts** - Editing settings doesn't affect ownership timestamp
 
 ### Files (MapCRDT per category)
 ```typescript
