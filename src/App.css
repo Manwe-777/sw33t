@@ -100,7 +100,19 @@ header {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.header-logo {
+  height: 32px;
+  width: auto;
+  color: var(--accent);
+}
+
+.header-logo-link {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
 }
 
 .header-left h1 {
@@ -2555,6 +2567,13 @@ main {
   justify-content: center;
   padding: 40px 20px;
   text-align: center;
+}
+
+.home-logo {
+  height: 120px;
+  width: auto;
+  margin-bottom: 16px;
+  color: var(--accent);
 }
 
 .home-container > h1 {

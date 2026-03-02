@@ -35,6 +35,7 @@ import SettingsModal from "./SettingsModal";
 import { Shield, Settings, Users, Ban, Folder, Plus, Save, X, Crown, UserPlus, Palette } from "lucide-react";
 import { ChannelAvatar, UserAvatar } from "./Avatar";
 import ThemeToggle from "./ThemeToggle";
+import Logo from "./Logo";
 
 function ChannelPage() {
   const { channelId, categoryId } = useParams();
@@ -343,6 +344,9 @@ function ChannelPage() {
       <header>
         <div className="header-content">
           <div className="header-left">
+            <Link to="/" className="header-logo-link">
+              <Logo className="header-logo" size={28} />
+            </Link>
             <h1><Link to="/">Sw33t</Link></h1>
             <div className="channel-badge">
               <span className="status-dot"></span>

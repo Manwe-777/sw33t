@@ -1,11 +1,20 @@
-# Sw33t
+<p align="center">
+  <img src="public/sw33t-dracula.svg" alt="Sw33t Logo" width="200" />
+</p>
+<h1 align="center">Sw33t</h1>
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
-[![P2P](https://img.shields.io/badge/P2P-WebRTC-green.svg)](https://webrtc.org/)
-[![Decentralized](https://img.shields.io/badge/Decentralized-ToolDB-purple.svg)](https://github.com/Manwe-777/tool-db)
+<p align="center">
+  <strong>Decentralized, censorship-resistant file sharing</strong>
+</p>
 
-A decentralized, censorship-resistant file sharing platform built with React and [ToolDB](https://github.com/Manwe-777/tool-db). Users join channels, browse categories, share files via links or P2P torrents, and interact through comments and upvotes - all without any central server.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License" /></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-19-61dafb.svg" alt="React" /></a>
+  <a href="https://webrtc.org/"><img src="https://img.shields.io/badge/P2P-WebRTC-green.svg" alt="P2P" /></a>
+  <a href="https://github.com/Manwe-777/tool-db"><img src="https://img.shields.io/badge/Decentralized-ToolDB-purple.svg" alt="Decentralized" /></a>
+</p>
+
+A decentralized file sharing platform built with React and [ToolDB](https://github.com/Manwe-777/tool-db). Users join channels, browse categories, share files via links or P2P torrents, and interact through comments and upvotes - all without any central server.
 
 **Live Demo**: https://manwe-777.github.io/sw33t/
 
@@ -120,6 +129,7 @@ docker run -d -p 8080:8080 -e CHANNELS=your-channel -v sw33t-data:/data sw33t-re
 ```
 
 The relay acts as an always-on peer that:
+
 - Persists channel data in LevelDB
 - Syncs with browser peers via WebRTC
 - Discovered automatically through trackers/Nostr (no fixed IP needed)
@@ -131,13 +141,13 @@ See [sw33t-relay/README.md](sw33t-relay/README.md) for full documentation.
 
 Sw33t is designed to be resilient:
 
-| Attack Vector | Why It Fails |
-|--------------|--------------|
-| Block the server | There is no server - data is peer-to-peer |
-| Block an IP | Peers discover each other via trackers/Nostr, not direct IPs |
-| Shut down a relay | Anyone can run a relay, data exists on all synced peers |
-| Block a domain | Browser app works from any host, relay needs no domain |
-| Pressure the operator | No single operator controls the network |
+| Attack Vector         | Why It Fails                                                 |
+| --------------------- | ------------------------------------------------------------ |
+| Block the server      | There is no server - data is peer-to-peer                    |
+| Block an IP           | Peers discover each other via trackers/Nostr, not direct IPs |
+| Shut down a relay     | Anyone can run a relay, data exists on all synced peers      |
+| Block a domain        | Browser app works from any host, relay needs no domain       |
+| Pressure the operator | No single operator controls the network                      |
 
 ## License
 

@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { Palette } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import SettingsModal from "./SettingsModal";
+import Logo from "./Logo";
 import { getRecentChannels } from "../lib/recentChannels";
 
 function HomePage() {
@@ -28,6 +29,7 @@ function HomePage() {
       <header>
         <div className="header-content">
           <div className="header-left">
+            <Logo className="header-logo" size={28} />
             <h1>Sw33t</h1>
           </div>
           <div className="header-right">
@@ -45,6 +47,7 @@ function HomePage() {
 
       <main>
         <div className="home-container">
+          <Logo className="home-logo" size={100} />
           <h1>Sw33t</h1>
           <p className="tagline">Decentralized File Sharing</p>
 

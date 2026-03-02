@@ -4,7 +4,7 @@ import { themes, themeIds, applyTheme, getTheme } from "../themes";
 const STORAGE_KEY = "sw33t-theme-settings";
 
 const defaultSettings = {
-  themeId: "monokai",
+  themeId: "dracula",
   mode: "dark", // "dark" or "light"
 };
 
