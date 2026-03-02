@@ -239,22 +239,36 @@ interface FileData {
 // Uploader + timestamp from message metadata (msg.a, msg.t)
 ```
 
-### Comments (MapCRDT per file)
+### Comments (MapCRDT per file — uses putCrdt/getCrdt)
 ```typescript
-// Key: comments-{fileId}
-// MapCRDT<CommentData>
-// Map key = {userAddress}-{timestamp}
+// Key: ch:{channelId}:comments_{fileId}
+// MapCRDT<CommentData> via putCrdt/getCrdt
+// Map key = {userAddress}_{timestamp}
+// Verificator: change.k must start with change.a, no DEL, text 1-500 chars
 interface CommentData {
   text: string;
   editedAt?: number;
 }
+
+// Usage:
+const map = new MapCrdt<CommentData>(userAddress);
+await db.getCrdt(key, map, false);           // Hydrate from peers/storage
+map.SET(`${userAddress}_${Date.now()}`, { text });  // Add comment
+await db.putCrdt(key, map, false);           // Broadcast changes
 ```
 
-### Upvotes (MapCRDT per file)
+### Upvotes (MapCRDT per file — uses putCrdt/getCrdt)
 ```typescript
-// Key: upvotes-{fileId}
-// MapCRDT<boolean>
+// Key: ch:{channelId}:upvotes_{fileId}
+// MapCRDT<boolean> via putCrdt/getCrdt
 // Map key = userAddress (one vote per user)
+// Verificator: change.k must equal change.a, no DEL
+
+// Usage:
+const map = new MapCrdt<boolean>(userAddress);
+await db.getCrdt(key, map, false);           // Hydrate
+map.SET(userAddress, true);                  // Upvote (or false to un-upvote)
+await db.putCrdt(key, map, false);           // Broadcast
 ```
 
 ## Implementation Phases

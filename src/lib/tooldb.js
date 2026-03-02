@@ -318,107 +318,98 @@ async function blocklistVerificatorLogic(msg, previousData) {
 }
 
 /**
- * Logic for comments - owner-edit only, no deletes, length limits
- * 
+ * Logic for comments (MapCRDT) - owner-edit only, no deletes, length limits
+ *
+ * CRDT format: msg.v is an array of MapChanges, each with:
+ *   { t: "SET"|"DEL", k: commentKey, a: changeAuthor, v: commentData, i: index }
+ *
  * Comment key format: {userAddress}_{timestamp}
  * Rules:
- * - Anyone can add new comments (key starts with their own address)
- * - Users can only edit their own comments (key must start with writer's address)
- * - No deletes allowed (handled by checking if values are being removed)
+ * - Each change's map key (change.k) must start with the change's author (change.a)
+ * - No DEL operations allowed (write-only)
  * - Comment text must be between 1 and 500 characters
  */
 const COMMENT_MAX_LENGTH = 500;
 const COMMENT_MIN_LENGTH = 1;
 
-async function commentsVerificatorLogic(msg, previousData) {
-  const writerAddress = msg.a;
-  const newValue = msg.v || {};
-  const oldValue = previousData?.v || {};
-  
-  // Check each entry in the new value
-  for (const [commentKey, commentData] of Object.entries(newValue)) {
-    // Check if this is a new or modified comment
-    const isNew = !(commentKey in oldValue);
-    const isModified = !isNew && JSON.stringify(oldValue[commentKey]) !== JSON.stringify(commentData);
-    
-    if (isNew || isModified) {
-      // Comment key must start with the writer's address
-      // This ensures users can only add/edit their own comments
-      if (!commentKey.startsWith(writerAddress)) {
-        console.warn("Comment write REJECTED - key doesn't match author:", commentKey, writerAddress);
-        return false;
-      }
-      
-      // Validate comment text length
-      const text = commentData?.text;
-      if (typeof text !== "string") {
-        console.warn("Comment write REJECTED - text is not a string:", commentKey);
-        return false;
-      }
-      
-      const textLength = text.trim().length;
-      if (textLength < COMMENT_MIN_LENGTH) {
-        console.warn("Comment write REJECTED - text too short:", textLength, "chars");
-        return false;
-      }
-      
-      if (textLength > COMMENT_MAX_LENGTH) {
-        console.warn("Comment write REJECTED - text too long:", textLength, "chars (max", COMMENT_MAX_LENGTH, ")");
-        return false;
-      }
-    }
+async function commentsVerificatorLogic(msg) {
+  // Must be a CRDT message
+  if (msg.c !== "MAP" || !Array.isArray(msg.v)) {
+    console.warn("Comment write REJECTED - not a MAP CRDT");
+    return false;
   }
-  
-  // Check for deletions - reject if any old keys are missing from new value
-  // (We're write-only, no deletions allowed)
-  for (const oldKey of Object.keys(oldValue)) {
-    if (!(oldKey in newValue)) {
-      console.warn("Comment write REJECTED - deletion not allowed:", oldKey);
+
+  for (const change of msg.v) {
+    // No deletes allowed
+    if (change.t === "DEL") {
+      console.warn("Comment write REJECTED - DEL not allowed");
+      return false;
+    }
+
+    // Each change's key must start with the change's own author
+    // (users can only add/edit their own comments)
+    if (!change.k.startsWith(change.a)) {
+      console.warn("Comment write REJECTED - key doesn't match change author:", change.k, change.a);
+      return false;
+    }
+
+    // Validate comment text
+    const text = change.v?.text;
+    if (typeof text !== "string") {
+      console.warn("Comment write REJECTED - text is not a string:", change.k);
+      return false;
+    }
+
+    const textLength = text.trim().length;
+    if (textLength < COMMENT_MIN_LENGTH) {
+      console.warn("Comment write REJECTED - text too short:", textLength, "chars");
+      return false;
+    }
+
+    if (textLength > COMMENT_MAX_LENGTH) {
+      console.warn("Comment write REJECTED - text too long:", textLength, "chars (max", COMMENT_MAX_LENGTH, ")");
       return false;
     }
   }
-  
-  console.log("Comments write allowed for:", writerAddress);
+
+  console.log("Comments CRDT write allowed for:", msg.a);
   return true;
 }
 
 /**
- * Logic for upvotes - users can only modify their own upvote entry
- * 
- * Upvote data format: { [userAddress]: boolean }
+ * Logic for upvotes (MapCRDT) - users can only modify their own vote
+ *
+ * CRDT format: msg.v is an array of MapChanges, each with:
+ *   { t: "SET"|"DEL", k: userAddress, a: changeAuthor, v: boolean, i: index }
+ *
  * Rules:
- * - Users can only add/modify the entry keyed by their own address
- * - Users cannot modify other users' upvote entries
+ * - Each change's map key (change.k) must equal the change's author (change.a)
+ *   (one vote per user, can only modify your own key)
+ * - No DEL operations allowed
  */
-async function upvotesVerificatorLogic(msg, previousData) {
-  const writerAddress = msg.a;
-  const newValue = msg.v || {};
-  const oldValue = previousData?.v || {};
-  
-  // Check each entry in the new value
-  for (const [userAddress, vote] of Object.entries(newValue)) {
-    const oldVote = oldValue[userAddress];
-    const isModified = oldVote !== vote;
-    
-    if (isModified) {
-      // Only the owner of this upvote entry can modify it
-      if (userAddress !== writerAddress) {
-        console.warn("Upvote write REJECTED - cannot modify another user's vote:", userAddress, "by", writerAddress);
-        return false;
-      }
-    }
+async function upvotesVerificatorLogic(msg) {
+  // Must be a CRDT message
+  if (msg.c !== "MAP" || !Array.isArray(msg.v)) {
+    console.warn("Upvote write REJECTED - not a MAP CRDT");
+    return false;
   }
-  
-  // Check for deletions - reject if any old keys are missing
-  // (Users cannot remove other users' upvotes from the data)
-  for (const oldKey of Object.keys(oldValue)) {
-    if (!(oldKey in newValue)) {
-      console.warn("Upvote write REJECTED - deletion not allowed:", oldKey);
+
+  for (const change of msg.v) {
+    // No deletes allowed
+    if (change.t === "DEL") {
+      console.warn("Upvote write REJECTED - DEL not allowed");
+      return false;
+    }
+
+    // Each change's key must equal the change's own author
+    // (users can only vote as themselves)
+    if (change.k !== change.a) {
+      console.warn("Upvote write REJECTED - key doesn't match change author:", change.k, change.a);
       return false;
     }
   }
-  
-  console.log("Upvotes write allowed for:", writerAddress);
+
+  console.log("Upvotes CRDT write allowed for:", msg.a);
   return true;
 }
 
