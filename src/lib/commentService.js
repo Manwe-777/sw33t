@@ -35,22 +35,6 @@ function getCommentsKey(fileId) {
   return getChannelKey(`comments_${sanitizeKey(fileId)}`);
 }
 
-// Local listeners for immediate UI updates
-const localCommentListeners = new Map(); // fileId -> Set of callbacks
-
-function notifyCommentListeners(fileId, data) {
-  const listeners = localCommentListeners.get(fileId);
-  if (listeners) {
-    listeners.forEach(cb => {
-      try {
-        cb(data);
-      } catch (err) {
-        console.error("Comment listener error:", err);
-      }
-    });
-  }
-}
-
 /**
  * Reconstruct a MapCrdt value from a raw CRDT message.
  * Handles both CRDT format (msg.c = "MAP", msg.v = changes[])
@@ -69,12 +53,13 @@ function valueFromCrdtMsg(msg) {
 }
 
 /**
- * Store CRDT data locally after putCrdt.
+ * Store CRDT data locally and trigger key listeners for immediate UI update.
  * putCrdt only broadcasts to the network — it does NOT write to
- * local storage (unlike putData). We need to persist manually
- * for local-first reads via getCrdt.
+ * local storage (unlike putData) or trigger key listeners.
+ * We persist manually for local-first reads, then trigger listeners
+ * so the UI updates without waiting for a network echo.
  */
-async function storeLocally(db, key, map) {
+async function storeAndNotify(db, key, map) {
   try {
     const data = {
       k: key,
@@ -87,6 +72,7 @@ async function storeLocally(db, key, map) {
       n: 0,
     };
     await db.store.put(key, JSON.stringify(data));
+    db.triggerKeyListener(key, data);
   } catch (err) {
     console.error("Failed to store CRDT locally:", err);
   }
@@ -150,10 +136,7 @@ export async function addComment(fileId, text) {
   map.SET(commentKey, commentData);
 
   await db.putCrdt(key, map, false);
-  await storeLocally(db, key, map);
-
-  const currentValue = map.value;
-  notifyCommentListeners(fileId, currentValue);
+  await storeAndNotify(db, key, map);
 
   return { key: commentKey, ...commentData };
 }
@@ -206,10 +189,7 @@ export async function editComment(fileId, commentKey, newText) {
   map.SET(commentKey, updatedComment);
 
   await db.putCrdt(key, map, false);
-  await storeLocally(db, key, map);
-
-  const currentValue = map.value;
-  notifyCommentListeners(fileId, currentValue);
+  await storeAndNotify(db, key, map);
 
   return updatedComment;
 }
@@ -225,27 +205,15 @@ export function subscribeToComments(fileId, callback) {
   const key = getCommentsKey(fileId);
   db.subscribeData(key);
 
-  // Network/storage listener — reconstruct CRDT value from changes
+  // Single listener path: network updates + local triggerKeyListener
   const listener = (msg) => {
     const value = valueFromCrdtMsg(msg);
     callback(value);
   };
-  db.addKeyListener(key, listener);
-
-  // Local listener for immediate updates
-  if (!localCommentListeners.has(fileId)) {
-    localCommentListeners.set(fileId, new Set());
-  }
-  localCommentListeners.get(fileId).add(callback);
+  const listenerId = db.addKeyListener(key, listener);
 
   return () => {
-    const listeners = localCommentListeners.get(fileId);
-    if (listeners) {
-      listeners.delete(callback);
-      if (listeners.size === 0) {
-        localCommentListeners.delete(fileId);
-      }
-    }
+    db.removeKeyListener(listenerId);
   };
 }
 

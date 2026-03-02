@@ -15,22 +15,6 @@ function getBlocklistKey(categoryId) {
   return getChannelKey(`${sanitizeKey(categoryId)}_blocklist`);
 }
 
-// Local listeners for immediate UI updates on local writes
-const localFileListeners = new Map(); // categoryId -> Set of callbacks
-
-function notifyFileListeners(categoryId, data) {
-  const listeners = localFileListeners.get(categoryId);
-  if (listeners) {
-    listeners.forEach(cb => {
-      try {
-        cb(data);
-      } catch (err) {
-        console.error("File listener error:", err);
-      }
-    });
-  }
-}
-
 export async function getFiles(categoryId) {
   const db = getToolDb();
   if (!db) return {};
@@ -78,8 +62,7 @@ export async function addFile(categoryId, file) {
   const updated = { ...existing, [id]: newFile };
   
   await db.putData(getFilesKey(categoryId), updated);
-  notifyFileListeners(categoryId, updated);
-  
+
   return newFile;
 }
 
@@ -107,38 +90,26 @@ export async function updateFile(categoryId, fileId, updates) {
   
   const updated = { ...existing, [fileId]: updatedFile };
   await db.putData(getFilesKey(categoryId), updated);
-  notifyFileListeners(categoryId, updated);
-  
+
   return updatedFile;
 }
 
 export function subscribeToFiles(categoryId, callback) {
   const db = getToolDb();
   if (!db) return () => {};
-  
+
   const key = getFilesKey(categoryId);
   db.subscribeData(key);
-  
-  // Network/storage listener
+
+  // putData already triggers key listeners, so this single path
+  // handles both local writes and remote updates
   const listener = (msg) => {
     callback(msg.v || {});
   };
-  db.addKeyListener(key, listener);
-  
-  // Local listener for immediate updates
-  if (!localFileListeners.has(categoryId)) {
-    localFileListeners.set(categoryId, new Set());
-  }
-  localFileListeners.get(categoryId).add(callback);
-  
+  const listenerId = db.addKeyListener(key, listener);
+
   return () => {
-    const listeners = localFileListeners.get(categoryId);
-    if (listeners) {
-      listeners.delete(callback);
-      if (listeners.size === 0) {
-        localFileListeners.delete(categoryId);
-      }
-    }
+    db.removeKeyListener(listenerId);
   };
 }
 

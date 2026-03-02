@@ -76,33 +76,28 @@ export function connectToChannel(channelId) {
     topic: topic,
   });
   
-  // Subscribe to ownership for permission verification
+  // Cache ownership and admins for verificator permission checks.
+  // Subscriptions are handled by channelService.subscribeToChannelMeta()
+  // — we only add listeners here to keep the verificator caches warm.
   const ownerKey = getChannelOwnerKey();
   const adminsKey = getChannelKey("admins");
-  
-  console.log("Subscribing to channel keys:", { ownerKey, adminsKey });
-  
-  db.subscribeData(ownerKey);
-  db.subscribeData(adminsKey);
-  
+
   db.addKeyListener(ownerKey, (msg) => {
     if (msg.v) {
       ownershipCache = msg.v;
-      console.log("Channel ownership cached:", ownershipCache);
     }
   });
-  
+
   db.addKeyListener(adminsKey, (msg) => {
     if (msg.v) {
       adminsCache = msg.v;
-      console.log("Channel admins cached:", adminsCache);
     }
   });
-  
+
   // Add custom verificators for permission enforcement
   setupVerificators(db);
-  
-  // Set up periodic sync for frozen namespace conflict resolution
+
+  // One-shot sync for frozen namespace conflict resolution
   setupFrozenNamespaceSync(db, ownerKey);
   
   // Expose for debugging
@@ -112,68 +107,48 @@ export function connectToChannel(channelId) {
 }
 
 /**
- * Set up periodic sync to resolve frozen namespace conflicts.
- * 
+ * One-shot sync for frozen namespace conflict resolution.
+ *
  * Problem: If user A creates a channel first, and user B creates it second
  * (offline), when B comes online, B won't receive A's ownership because:
  * - A won't PUT again (frozen namespace, already written)
  * - B has local data, so getData returns local copy immediately
- * 
- * Solution: Send GET requests to peers and listen for PUT responses.
- * When a peer responds with data, ToolDB's handlePut will compare timestamps
- * and update local storage if the peer's data is older.
+ *
+ * Solution: Send a GET request to peers after connections establish.
+ * The response triggers handlePut which compares timestamps and keeps
+ * the earliest write (true first creator).
+ *
+ * Two attempts with backoff — if no peers are connected on the first
+ * try, retry once more after a longer delay.
  */
 function setupFrozenNamespaceSync(dbInstance, ownerKey) {
-  let syncAttempts = 0;
-  const maxAttempts = 5;
-  const syncIntervals = [2000, 5000, 10000, 30000, 60000]; // Backoff
-  
-  const attemptSync = async () => {
-    if (syncAttempts >= maxAttempts) {
-      return;
-    }
-    
-    // clientToSend is an object, not a Map, so use Object.keys
-    const clientToSend = dbInstance.network?.clientToSend || {};
-    const connectedPeers = Object.keys(clientToSend).length;
-    
-    if (connectedPeers === 0) {
-      const delay = syncIntervals[Math.min(syncAttempts, syncIntervals.length - 1)];
-      syncAttempts++;
-      setTimeout(attemptSync, delay);
-      return;
-    }
-    
-    // Send GET request to all peers - the response will come as a PUT message
-    // which will be handled by handlePut and compared against our local data
+  let resolved = false;
+
+  const attemptSync = () => {
+    if (resolved) return;
+
+    const connectedPeers = Object.keys(dbInstance.network?.clientToSend || {}).length;
+    if (connectedPeers === 0) return false;
+
     const msgId = Math.random().toString(36).substring(2, 12);
-    
-    // Send GET to all peers
     dbInstance.network.sendToAll({
       type: "get",
       to: [],
       key: ownerKey,
       id: msgId,
     });
-    
-    // Clean up listener after timeout
-    setTimeout(() => {
-      dbInstance.removeIdListener(msgId);
-    }, 5000);
-    
-    syncAttempts++;
-    scheduleNextSync();
+    setTimeout(() => dbInstance.removeIdListener(msgId), 5000);
+    resolved = true;
+    return true;
   };
-  
-  const scheduleNextSync = () => {
-    if (syncAttempts < maxAttempts) {
-      const delay = syncIntervals[Math.min(syncAttempts, syncIntervals.length - 1)];
-      setTimeout(attemptSync, delay);
+
+  // First attempt at 3s (connections usually establish by then)
+  setTimeout(() => {
+    if (!attemptSync()) {
+      // No peers yet — retry once at 10s
+      setTimeout(attemptSync, 10000);
     }
-  };
-  
-  // Start first sync attempt after a short delay (let connections establish)
-  setTimeout(attemptSync, 1000);
+  }, 3000);
 }
 
 /**

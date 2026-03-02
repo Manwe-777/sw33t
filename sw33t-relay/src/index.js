@@ -148,12 +148,13 @@ EXAMPLES:
 `);
 }
 
-// Sync interval in milliseconds (default: 30 seconds)
-const SYNC_INTERVAL = parseInt(process.env.SYNC_INTERVAL) || 30000;
+// Sync interval in milliseconds (default: 60 seconds)
+const SYNC_INTERVAL = parseInt(process.env.SYNC_INTERVAL) || 60000;
 
 /**
- * Perform a full sync - query all keys from peers and fetch any we don't have
- * This ensures the relay has all data from all connected peers
+ * Perform a full sync - query all keys from peers and fetch any we don't have.
+ * This is a catch-all for data missed by subscriptions (e.g. keys created
+ * while the relay was offline). Subscriptions handle the live data flow.
  */
 async function performFullSync(db, channelId, config) {
   const peerCount = Object.keys(db.network.clientToSend || {}).length;
@@ -162,30 +163,25 @@ async function performFullSync(db, channelId, config) {
   }
 
   try {
-    // Query all keys from peers (empty prefix = all keys)
-    // Use longer timeout to allow peers to respond
+    // Query all keys from peers — empty prefix returns everything,
+    // no need for a second channel-scoped query.
     const remoteKeys = await db.queryKeys("", false, 5000);
-    
+
     if (!remoteKeys || remoteKeys.length === 0) {
       return;
     }
 
-    // Also query channel-specific keys
-    const channelKeys = await db.queryKeys(`ch:${channelId}:`, false, 5000);
-    const allKeys = [...new Set([...(remoteKeys || []), ...(channelKeys || [])])];
-
     if (config.debug) {
-      console.log(`[${channelId}] Sync: Found ${allKeys.length} keys from peers`);
+      console.log(`[${channelId}] Sync: Found ${remoteKeys.length} keys from peers`);
     }
 
-    // Fetch each key - getData will get the latest version from any peer
+    // Fetch each key to get the latest version
     let synced = 0;
-    for (const key of allKeys) {
+    for (const key of remoteKeys) {
       try {
-        // getData sends a GET request to peers and stores the response
         await db.getData(key, false, 2000);
         synced++;
-      } catch (e) {
+      } catch {
         // Key might not exist on any peer, ignore
       }
     }
@@ -286,33 +282,37 @@ async function createChannelRelay(channelId, config, portOffset = 0) {
   // Subscribe to channel data patterns
   subscribeToChannelData(db, channelId, config);
 
-  // Track connected peers
+  // Track connected peers and sync when new ones join
   let lastPeerCount = 0;
+  let syncScheduled = false;
   setInterval(() => {
     const peerCount = Object.keys(db.network.clientToSend || {}).length;
     if (peerCount !== lastPeerCount) {
+      const peersIncreased = peerCount > lastPeerCount;
       console.log(`[${channelId}] Connected peers: ${peerCount}`);
       lastPeerCount = peerCount;
-      
-      // Trigger sync when new peers connect
-      if (peerCount > lastPeerCount) {
+
+      // Sync when NEW peers connect (debounced — skip if one is already scheduled)
+      if (peersIncreased && !syncScheduled) {
+        syncScheduled = true;
         setTimeout(() => {
+          syncScheduled = false;
           performFullSync(db, channelId, config);
-        }, 2000); // Wait 2s for connection to stabilize
+        }, 3000);
       }
     }
-  }, 5000);
+  }, 10000);
 
-  // Periodic full sync to catch any missed data
+  // Periodic full sync as a catch-all for missed data
   setInterval(() => {
     performFullSync(db, channelId, config);
   }, SYNC_INTERVAL);
 
-  // Initial sync after a short delay (let connections establish)
+  // Initial sync after connections establish
   setTimeout(() => {
     console.log(`[${channelId}] Running initial sync...`);
     performFullSync(db, channelId, config);
-  }, 10000);
+  }, 15000);
 
   // Log received data for debugging
   if (config.debug) {

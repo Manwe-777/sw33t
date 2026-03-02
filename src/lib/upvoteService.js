@@ -27,22 +27,6 @@ function getUpvotesKey(fileId) {
   return getChannelKey(`upvotes_${sanitizeKey(fileId)}`);
 }
 
-// Local listeners for immediate UI updates
-const localUpvoteListeners = new Map(); // fileId -> Set of callbacks
-
-function notifyUpvoteListeners(fileId, data) {
-  const listeners = localUpvoteListeners.get(fileId);
-  if (listeners) {
-    listeners.forEach(cb => {
-      try {
-        cb(data);
-      } catch (err) {
-        console.error("Upvote listener error:", err);
-      }
-    });
-  }
-}
-
 /**
  * Reconstruct a MapCrdt value from a raw CRDT message.
  * Handles both CRDT format (msg.c = "MAP", msg.v = changes[])
@@ -61,12 +45,13 @@ function valueFromCrdtMsg(msg) {
 }
 
 /**
- * Store CRDT data locally after putCrdt.
+ * Store CRDT data locally and trigger key listeners for immediate UI update.
  * putCrdt only broadcasts to the network — it does NOT write to
- * local storage (unlike putData). We need to persist manually
- * for local-first reads via getCrdt.
+ * local storage (unlike putData) or trigger key listeners.
+ * We persist manually for local-first reads, then trigger listeners
+ * so the UI updates without waiting for a network echo.
  */
-async function storeLocally(db, key, map) {
+async function storeAndNotify(db, key, map) {
   try {
     const data = {
       k: key,
@@ -79,6 +64,7 @@ async function storeLocally(db, key, map) {
       n: 0,
     };
     await db.store.put(key, JSON.stringify(data));
+    db.triggerKeyListener(key, data);
   } catch (err) {
     console.error("Failed to store CRDT locally:", err);
   }
@@ -132,12 +118,9 @@ export async function toggleUpvote(fileId) {
   map.SET(userAddress, newVote);
 
   await db.putCrdt(key, map, false);
-  await storeLocally(db, key, map);
+  await storeAndNotify(db, key, map);
 
-  const currentValue = map.value;
-  notifyUpvoteListeners(fileId, currentValue);
-
-  return { upvoted: newVote, upvotes: currentValue };
+  return { upvoted: newVote, upvotes: map.value };
 }
 
 /**
@@ -182,27 +165,15 @@ export function subscribeToUpvotes(fileId, callback) {
   const key = getUpvotesKey(fileId);
   db.subscribeData(key);
 
-  // Network/storage listener — reconstruct CRDT value from changes
+  // Single listener path: network updates + local triggerKeyListener
   const listener = (msg) => {
     const value = valueFromCrdtMsg(msg);
     callback(value);
   };
-  db.addKeyListener(key, listener);
-
-  // Local listener for immediate updates
-  if (!localUpvoteListeners.has(fileId)) {
-    localUpvoteListeners.set(fileId, new Set());
-  }
-  localUpvoteListeners.get(fileId).add(callback);
+  const listenerId = db.addKeyListener(key, listener);
 
   return () => {
-    const listeners = localUpvoteListeners.get(fileId);
-    if (listeners) {
-      listeners.delete(callback);
-      if (listeners.size === 0) {
-        localUpvoteListeners.delete(fileId);
-      }
-    }
+    db.removeKeyListener(listenerId);
   };
 }
 

@@ -288,11 +288,10 @@ export async function initializeChannel(channelId, userAddress, username) {
   await db.putData(getBlocklistKey(), {});
   blocklistCache = {};
   
-  const combinedData = getCombinedChannelData();
   console.log("Channel initialized, user is creator:", userAddress);
-  notifyListeners();
-  
-  return combinedData;
+
+  // putData triggers addKeyListener which calls notifyListeners
+  return getCombinedChannelData();
 }
 
 /**
@@ -397,8 +396,7 @@ export async function updateChannelSettings(updates) {
   
   await db.putData(getMetaKey(), newSettings);
   settingsCache = newSettings;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -434,8 +432,7 @@ export async function promoteToAdmin(targetAddress, permissions = DEFAULT_ADMIN_
   
   await db.putData(getAdminsKey(), newAdmins);
   adminsCache = newAdmins;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -480,8 +477,7 @@ export async function updateAdminPermissions(targetAddress, permissions) {
   
   await db.putData(getAdminsKey(), newAdmins);
   adminsCache = newAdmins;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -520,8 +516,7 @@ export async function demoteAdmin(targetAddress) {
   
   await db.putData(getAdminsKey(), newAdmins);
   adminsCache = newAdmins;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -552,8 +547,7 @@ export async function addToBlocklist(targetAddress, reason = "") {
   
   await db.putData(getBlocklistKey(), newBlocklist);
   blocklistCache = newBlocklist;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -590,8 +584,7 @@ export async function removeFromBlocklist(targetAddress) {
   
   await db.putData(getBlocklistKey(), newBlocklist);
   blocklistCache = newBlocklist;
-  notifyListeners();
-  
+
   return getCombinedChannelData();
 }
 
@@ -611,11 +604,6 @@ export async function getCategories() {
 // Local categories cache
 let localCategoriesCache = null;
 let categoriesListeners = [];
-
-function notifyCategoriesListeners(categories) {
-  localCategoriesCache = categories;
-  categoriesListeners.forEach(cb => cb(categories));
-}
 
 export async function createCategory(id, name, icon = "folder") {
   const db = getToolDb();
@@ -640,8 +628,7 @@ export async function createCategory(id, name, icon = "folder") {
   
   const updated = { ...existing, [id]: category };
   await db.putData(getCategoriesKey(), updated);
-  notifyCategoriesListeners(updated);
-  
+
   return category;
 }
 
@@ -676,8 +663,7 @@ export async function deleteCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
-  notifyCategoriesListeners(updated);
-  
+
   return updated;
 }
 
@@ -708,8 +694,7 @@ export async function restoreCategory(categoryId) {
   };
   
   await db.putData(getCategoriesKey(), updated);
-  notifyCategoriesListeners(updated);
-  
+
   return updated;
 }
 
@@ -717,62 +702,65 @@ export function isCategoryDeleted(category) {
   return category?.deleted != null;
 }
 
+// Guard: subscribe to ToolDB keys only once, not per React render
+let metaSubscribed = false;
+
 export function subscribeToChannelMeta(callback) {
   const db = getToolDb();
   if (!db) return () => {};
-  
+
   // Add to listeners
   channelDataListeners.push(callback);
-  
+
   // If we have cached data, call immediately
   const current = getCombinedChannelData();
   if (current) {
     callback(current);
   }
-  
-  // Subscribe to all relevant keys
-  const ownerKey = getOwnerKey();
-  const metaKey = getMetaKey();
-  const adminsKey = getAdminsKey();
-  const blocklistKey = getBlocklistKey();
-  
-  db.subscribeData(ownerKey);
-  db.subscribeData(metaKey);
-  db.subscribeData(adminsKey);
-  db.subscribeData(blocklistKey);
-  
-  // Ownership listener
-  db.addKeyListener(ownerKey, (msg) => {
-    if (msg.v) {
-      ownershipCache = msg.v;
-      notifyListeners();
-    }
-  });
-  
-  // Settings listener
-  db.addKeyListener(metaKey, (msg) => {
-    if (msg.v) {
-      settingsCache = msg.v;
-      notifyListeners();
-    }
-  });
-  
-  // Admins listener
-  db.addKeyListener(adminsKey, (msg) => {
-    if (msg.v) {
-      adminsCache = msg.v;
-      notifyListeners();
-    }
-  });
-  
-  // Blocklist listener
-  db.addKeyListener(blocklistKey, (msg) => {
-    if (msg.v) {
-      blocklistCache = msg.v;
-      notifyListeners();
-    }
-  });
-  
+
+  // Only register subscriptions + key listeners once
+  if (!metaSubscribed) {
+    metaSubscribed = true;
+
+    const ownerKey = getOwnerKey();
+    const metaKey = getMetaKey();
+    const adminsKey = getAdminsKey();
+    const blocklistKey = getBlocklistKey();
+
+    db.subscribeData(ownerKey);
+    db.subscribeData(metaKey);
+    db.subscribeData(adminsKey);
+    db.subscribeData(blocklistKey);
+
+    db.addKeyListener(ownerKey, (msg) => {
+      if (msg.v) {
+        ownershipCache = msg.v;
+        notifyListeners();
+      }
+    });
+
+    db.addKeyListener(metaKey, (msg) => {
+      if (msg.v) {
+        settingsCache = msg.v;
+        notifyListeners();
+      }
+    });
+
+    db.addKeyListener(adminsKey, (msg) => {
+      if (msg.v) {
+        adminsCache = msg.v;
+        notifyListeners();
+      }
+    });
+
+    db.addKeyListener(blocklistKey, (msg) => {
+      if (msg.v) {
+        blocklistCache = msg.v;
+        notifyListeners();
+      }
+    });
+  }
+
   return () => {
     channelDataListeners = channelDataListeners.filter(cb => cb !== callback);
   };
@@ -810,6 +798,7 @@ export function resetChannelCache() {
   localCategoriesCache = null;
   channelDataListeners = [];
   categoriesListeners = [];
+  metaSubscribed = false;
 }
 
 /**
